@@ -5,18 +5,31 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sahir's Portfolio</title>
     <link rel="stylesheet" href="styles.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
 </head>
 <body>
+    <!-- Header -->
+    <header class="header">
+        <img src="profile.jpg" alt="Sahir's Profile" class="profile-pic">
+        <nav>
+            <ul>
+                <li><a href="#about">About</a></li>
+                <li><a href="#projects">Projects</a></li>
+                <li><a href="#contact">Contact</a></li>
+            </ul>
+        </nav>
+    </header>
+    
     <!-- Hero Section -->
-    <section class="hero">
-        <h1>Hi, I'm Sahir</h1>
-        <p>React Native & Web Developer | IT Specialist</p>
-        <button onclick="scrollToProjects()">View My Work</button>
+    <section class="hero" id="about">
+        <h1 id="hero-title">Hi, I'm Sahir</h1>
+        <p id="hero-subtitle">React Native & Web Developer | IT Specialist</p>
+        <button id="hero-btn" onclick="scrollToProjects()">View My Work</button>
     </section>
 
     <!-- Projects Section -->
     <section class="projects" id="projects">
-        <h2>Projects</h2>
+        <h2 id="projects-title">Projects</h2>
         <div class="project-grid">
             <div class="project-card"> <h3>Project 1</h3> <p>Description of the project.</p> </div>
             <div class="project-card"> <h3>Project 2</h3> <p>Description of the project.</p> </div>
@@ -24,6 +37,43 @@
         </div>
     </section>
 
-    <script src="script.js"></script>
+    <!-- Contact Section -->
+    <section class="contact" id="contact">
+        <h2>Contact Me</h2>
+        <p>Email: sahir@example.com</p>
+    </section>
+    
+    <!-- Footer -->
+    <footer>
+        <p>&copy; 2024 Sahir. All rights reserved.</p>
+    </footer>
+
+    <script>
+        // Hero Section Animation
+        gsap.from("#hero-title", { duration: 1.5, y: -50, opacity: 0, ease: "bounce.out" });
+        gsap.from("#hero-subtitle", { duration: 1.5, y: -30, opacity: 0, delay: 0.5 });
+        gsap.from("#hero-btn", { duration: 1, scale: 0, opacity: 0, delay: 1 });
+        
+        // Project Cards Animation
+        gsap.from(".project-card", {
+            duration: 1, 
+            y: 50, 
+            opacity: 0, 
+            stagger: 0.3, 
+            scrollTrigger: {
+                trigger: ".projects",
+                start: "top 80%"
+            }
+        });
+
+        // Scroll Animation
+        gsap.from(".profile-pic", { duration: 1.5, opacity: 0, scale: 0.5, ease: "power2.out" });
+        gsap.from(".header nav ul li", {
+            duration: 1, 
+            y: -20, 
+            opacity: 0, 
+            stagger: 0.2
+        });
+    </script>
 </body>
 </html>
