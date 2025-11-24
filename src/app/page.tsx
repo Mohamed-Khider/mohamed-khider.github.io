@@ -93,7 +93,7 @@ function FloatingCard({ children }: any) {
 }
 
 function AnimatedSphere() {
-  const ref = useRef<any>();
+  const ref = useRef<any>(null);
   useFrame((state, delta) => {
     if (ref.current) ref.current.rotation.y += delta * 0.2;
   });

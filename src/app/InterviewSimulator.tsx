@@ -64,7 +64,7 @@ export default function InterviewSimulator({ questions = DEFAULT_QUESTIONS }: { 
     r.continuous = true;
     r.interimResults = true;
     r.lang = 'en-US';
-    r.onresult = (ev: SpeechRecognitionEvent) => {
+    r.onresult = (ev: any) => {
       let interim = '';
       let finalTrans = '';
       for (let i = ev.resultIndex; i < ev.results.length; ++i) {

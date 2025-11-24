@@ -1,4 +1,4 @@
-export  function answerQuery(q: string, setAnswer, setSource , PROFILE: any) {
+export  function answerQuery(q: string, setAnswer:any, setSource:any , PROFILE: any) {
     const qn = q.trim().toLowerCase();
     if (!qn) { setAnswer('Ask me anything about my skills, projects, or experience.'); setSource(''); return; }
 
@@ -24,7 +24,7 @@ export  function answerQuery(q: string, setAnswer, setSource , PROFILE: any) {
       return;
     }
      // fallback: search fields
-    const joined = [PROFILE.summary, ...PROFILE.skills, ...PROFILE.projects.map(p => p.summary)].join('\n').toLowerCase();
+    const joined = [PROFILE.summary, ...PROFILE.skills, ...PROFILE.projects.map((p: { summary: any; }) => p.summary)].join('\n').toLowerCase();
     if (joined.includes(qn)) {
       setAnswer('Yes — that is part of my profile. See the Projects and Skills sections for more details.');
       setSource('Profile');
