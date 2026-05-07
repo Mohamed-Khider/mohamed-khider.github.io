@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Responsive Barcode Label Printer</title>
+
+<!-- Material Design -->
+<link href="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/css/materialize.min.css" rel="stylesheet">
+
+<!-- Barcode -->
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+
+<!-- Zebra -->
+<script src="https://unpkg.com/zebra-browser-print@1.0.4/dist/index.js"></script>
+
+<style>
+  body {
+    background: #f5f5f5;
+  }
+
+  .card {
+    border-radius: 12px;
+  }
+
+  /* 🔥 FLEXIBLE LABEL */
+  .label-preview {
+    display: flex;
+    justify-content: center;
+    margin-top: 20px;
+  }
+
+  .label-box {
+    width: 100%;
+    max-width: 400px;   /* scales for bigger labels */
+    aspect-ratio: 5 / 3; /* keeps label proportions */
+    border: 2px solid #000;
+    border-radius: 10px;
+    background: white;
+
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 10px;
+  }
+
+  svg {
+    width: 100%;
+    height: 60%;
+  }
+
+  .label-text {
+    margin-top: 10px;
+    font-weight: 600;
+    font-size: clamp(14px, 2vw, 20px);
+    letter-spacing: 2px;
+    text-align: center;
+    word-break: break-all;
+  }
+
+</style>
+</head>
+
+<body>
+
+<div class="container">
+  <div class="row">
+    <div class="col s12 m8 offset-m2">
+
+      <div class="card">
+        <div class="card-content">
+          <span class="card-title">Barcode Label Printer</span>
+
+          <div class="input-field">
+            <input id="labelInput" type="text" autofocus>
+            <label for="labelInput">Scan or Enter Code</label>
+          </div>
+
+          <button id="printBtn" class="btn waves-effect waves-light blue" disabled onclick="confirmPrint()">
+            Print Label
+          </button>
+
+          <!-- 🔥 FLEXIBLE LABEL PREVIEW -->
+          <div class="label-preview">
+            <div class="label-box">
+              <svg id="barcode"></svg>
+              <div id="labelText" class="label-text"></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+
+let lastValue = "";
+const input = document.getElementById("labelInput");
+
+/* 🔄 INPUT → PREVIEW */
+input.addEventListener("input", function () {
+  const value = input.value.trim();
+  if (!value) return;
+
+  lastValue = value;
+  generatePreview(value);
+  document.getElementById("printBtn").disabled = false;
+});
+
+/* ⌨️ ENTER TO CONFIRM */
+input.addEventListener("keypress", function(e) {
+  if (e.key === "Enter") confirmPrint();
+});
+
+/* 🖼️ RESPONSIVE BARCODE */
+function generatePreview(value) {
+
+  JsBarcode("#barcode", value, {
+    format: "CODE128",
+    width: 2,
+    height: 80,
+    displayValue: false,
+    margin: 0
+  });
+
+  document.getElementById("labelText").innerText = value;
+}
+
+/* ✅ CONFIRM */
+function confirmPrint() {
+  if (!lastValue) return;
+
+  if (!confirm(`Print label for: ${lastValue}?`)) return;
+
+  printLabel(lastValue);
+}
+
+/* 🖨️ PRINT */
+function printLabel(value) {
+
+  const zpl = `
+^XA
+^PW600
+^LL360
+
+^FO50,80
+^BY3
+^BCN,120,Y,N,N
+^FD${value}^FS
+
+^FO80,250
+^A0N,40,40
+^FD${value}^FS
+
+^XZ
+  `.trim();
+
+  const printFrame = document.createElement("iframe");
+  printFrame.style.position = "fixed";
+  printFrame.style.right = "0";
+  printFrame.style.bottom = "0";
+  printFrame.style.width = "0";
+  printFrame.style.height = "0";
+  printFrame.style.border = "0";
+
+  document.body.appendChild(printFrame);
+
+  const doc = printFrame.contentWindow.document;
+  doc.open();
+  doc.write(`
+    <pre>${zpl}</pre>
+    <script>
+      window.onload = function() {
+        window.focus();
+        window.print();
+        setTimeout(() => window.close(), 500);
+      }
+    <\/script>
+  `);
+  doc.close();
+
+BrowserPrint.getLocalDevices(function(devices) {
+  const zebra = devices.find(d => d.name.includes("ZD231"));
+
+  if (zebra) {
+    zebra.send("^XA^FO50,50^FDTEST^FS^XZ");
+  }
+});
+
+  input.value = "";
+  document.getElementById("printBtn").disabled = true;
+}
+
+</script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
+
+</body>
+</html>
