@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Material Login</title>
+
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+
+<style>
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    margin: 0;
+    font-family: "Roboto", sans-serif;
+    background: linear-gradient(135deg, #1976d2, #42a5f5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+  }
+
+  .container {
+    width: 100%;
+    max-width: 380px;
+    padding: 16px;
+  }
+
+  .card {
+    background: #fff;
+    padding: 32px 24px;
+    border-radius: 16px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+    animation: fadeIn 0.4s ease;
+  }
+
+  h2 {
+    margin-bottom: 24px;
+    font-weight: 500;
+    color: #333;
+  }
+
+  /* INPUT FIELD */
+  .field {
+    position: relative;
+    margin-bottom: 28px;
+  }
+
+  .field input {
+    width: 100%;
+    padding: 14px 12px 14px 40px;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    font-size: 16px;
+    outline: none;
+    transition: 0.2s;
+    background: transparent;
+  }
+
+  .field input:focus {
+    border-color: #1976d2;
+    box-shadow: 0 0 0 2px rgba(25,118,210,0.2);
+  }
+
+  /* ICON */
+  .field .material-icons {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #777;
+    font-size: 20px;
+  }
+
+  /* FLOATING LABEL */
+  .field label {
+    position: absolute;
+    left: 40px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: #fff;
+    padding: 0 4px;
+    color: #777;
+    font-size: 16px;
+    pointer-events: none;
+    transition: 0.2s ease;
+  }
+
+  /* FLOAT EFFECT */
+  .field input:focus + label,
+  .field input:not(:placeholder-shown) + label {
+    top: -8px;
+    font-size: 12px;
+    color: #1976d2;
+  }
+
+  /* BUTTON */
+  button {
+    width: 100%;
+    padding: 14px;
+    border: none;
+    border-radius: 8px;
+    background: #1976d2;
+    color: white;
+    font-size: 16px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: 0.2s;
+  }
+
+  button:hover {
+    background: #1565c0;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+  }
+
+  button:active {
+    transform: scale(0.98);
+  }
+
+  .footer {
+    margin-top: 16px;
+    font-size: 14px;
+    color: #666;
+    text-align: center;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+</style>
+</head>
+
+<body>
+
+<div class="container">
+  <div class="card">
+    <h2>Warehouse Login</h2>
+
+    <form onsubmit="login(event)">
+  
+  <div class="field">
+    <span class="material-icons">person</span>
+    <input id="user" type="text" placeholder=" " required>
+    <label>Username</label>
+  </div>
+
+  <div class="field">
+    <span class="material-icons">lock</span>
+    <input id="pass" type="password" placeholder=" " required>
+    <label>Password</label>
+  </div>
+
+  <button type="submit">Login</button>
+
+</form>
+
+<script>
+function login(e) {
+  e.preventDefault(); // stop page reload
+
+  const u = document.getElementById('user').value;
+  const p = document.getElementById('pass').value;
+
+  if (u === "admin" && p === "1234") {
+    localStorage.setItem("auth", "true");
+    window.location.href = "index.html";
+  } else {
+    alert("Invalid login");
+  }
+}
+</script>
+
+</body>
+</html>
