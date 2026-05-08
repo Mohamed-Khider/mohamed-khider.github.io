@@ -2,12 +2,14 @@
 
 import { useEffect, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
+import { getCurrentUser, setCurrentUser } from "../lib/userManagement";
 
 interface ProtectedPageProps {
   children: ReactNode;
+  requireAdmin?: boolean;
 }
 
-export default function ProtectedPage({ children }: ProtectedPageProps) {
+export default function ProtectedPage({ children, requireAdmin = false }: ProtectedPageProps) {
   const router = useRouter();
 
   useEffect(() => {
@@ -15,10 +17,21 @@ export default function ProtectedPage({ children }: ProtectedPageProps) {
       return;
     }
 
-    if (localStorage.getItem("auth") !== "true") {
+    const currentUser = getCurrentUser();
+
+    if (!currentUser) {
       router.replace("/");
+      return;
     }
-  }, [router]);
+
+    if (requireAdmin && currentUser.role !== 'admin') {
+      router.replace("/main");
+      return;
+    }
+
+    // Update current user in localStorage to keep session active
+    setCurrentUser(currentUser);
+  }, [router, requireAdmin]);
 
   return <>{children}</>;
 }

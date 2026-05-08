@@ -1,9 +1,13 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import JsBarcode from "jsbarcode";
 import ProtectedPage from "../components/ProtectedPage";
+import NotificationModal from "../components/NotificationModal";
+import PageHeader from "../components/PageHeader";
 import { sendZplToPrinter } from "../lib/printService";
+import { getCurrentUser, hasPermission } from "../lib/userManagement";
+import { addPrintHistory, getPrintHistoryByType, initializePrintHistory, PrintHistoryEntry } from "../lib/printHistory";
 
 const rangeOne = ["01", "02", "03", "04", "05", "06"];
 const rangeTwo = ["07", "08", "09", "10"];
@@ -13,14 +17,33 @@ export default function PalletPage() {
   const [range, setRange] = useState("1");
   const [codes, setCodes] = useState<string[]>([]);
   const [printerIp, setPrinterIp] = useState("");
+  const [printHistory, setPrintHistory] = useState<PrintHistoryEntry[]>([]);
+  const [isPrinting, setIsPrinting] = useState(false);
+  const [isSending, setIsSending] = useState(false);
+  const [notification, setNotification] = useState<{ title: string; message: string; type: "warning" | "success" | "info" } | null>(null);
   const svgRefs = useRef<Array<SVGSVGElement | null>>([]);
 
+  const currentUser = getCurrentUser();
+  const canPrint = hasPermission(currentUser, "print_labels");
   const base = useMemo(() => `${cValue.trim().toUpperCase()}-PLT`, [cValue]);
+
+  const loadHistory = () => {
+    initializePrintHistory();
+    setPrintHistory(getPrintHistoryByType("pallet"));
+  };
+
+  useEffect(() => {
+    loadHistory();
+  }, []);
+
+  const openNotification = (title: string, message: string, type: "warning" | "success" | "info" = "warning") => {
+    setNotification({ title, message, type });
+  };
 
   const handleGenerate = () => {
     const normalizedC = cValue.trim().toUpperCase();
     if (!normalizedC) {
-      alert("Enter a C value first.");
+      openNotification("Missing C Value", "Enter a C value first before generating labels.", "warning");
       return;
     }
 
@@ -28,15 +51,48 @@ export default function PalletPage() {
     setCodes(suffixes.map((suffix) => `${base}-${suffix}`));
   };
 
-  const [isSending, setIsSending] = useState(false);
+  const handlePrint = async () => {
+    if (!codes.length) {
+      openNotification("Nothing to Print", "Generate labels before printing.", "warning");
+      return;
+    }
 
-  const handlePrint = () => {
-    window.print();
+    if (!canPrint) {
+      openNotification("Permission Required", "Your account does not have permission to print labels. Contact an administrator.", "warning");
+      return;
+    }
+
+    setIsPrinting(true);
+
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      window.print();
+      addPrintHistory({
+        type: "pallet",
+        title: "Pallet labels printed",
+        location: base,
+        codes,
+        printerIp: printerIp || undefined,
+        action: "printed",
+        user: currentUser?.username || "anonymous"
+      });
+      loadHistory();
+      openNotification("Printed Successfully", "Pallet labels were sent to your printer.", "success");
+    } catch (error) {
+      openNotification("Print Failed", String(error), "warning");
+    } finally {
+      setIsPrinting(false);
+    }
   };
 
   const handleSendToZebra = async () => {
     if (!zplText) {
-      alert("Generate labels before sending to the Zebra printer.");
+      openNotification("No ZPL Output", "Generate labels before sending to the Zebra printer.", "warning");
+      return;
+    }
+
+    if (!canPrint) {
+      openNotification("Permission Required", "Your account does not have permission to send labels to the Zebra printer.", "warning");
       return;
     }
 
@@ -44,9 +100,19 @@ export default function PalletPage() {
 
     try {
       await sendZplToPrinter(zplText, printerIp || undefined);
-      alert("ZPL sent to the Zebra printer via server.");
+      addPrintHistory({
+        type: "pallet",
+        title: "Pallet ZPL sent",
+        location: base,
+        codes,
+        printerIp: printerIp || undefined,
+        action: "sent",
+        user: currentUser?.username || "anonymous"
+      });
+      loadHistory();
+      openNotification("ZPL Sent", "ZPL was successfully sent to the Zebra printer.", "success");
     } catch (error) {
-      alert(String(error));
+      openNotification("Printer Error", String(error), "warning");
     } finally {
       setIsSending(false);
     }
@@ -72,12 +138,12 @@ export default function PalletPage() {
   return (
     <ProtectedPage>
       <div className="container">
-        <div className="page-header">
-          <div>
-            <h1>Pallet Label Generator</h1>
-            <p>Generate pallet barcode labels and preview the ZPL output.</p>
-          </div>
-        </div>
+        <PageHeader
+          title="Pallet Label Generator"
+          subtitle="Generate pallet barcode labels and preview the ZPL output."
+          showBack={true}
+          showLogout={true}
+        />
 
         <div className="card">
           <div className="form-field">
@@ -118,18 +184,23 @@ export default function PalletPage() {
             <button className="primary-button" type="button" onClick={handleGenerate}>
               Generate
             </button>
-            <button className="second-button" type="button" onClick={handlePrint}>
-              Print Labels
+            <button className="second-button" type="button" onClick={handlePrint} disabled={!codes.length || isPrinting || !canPrint}>
+              {isPrinting ? "Printing..." : "Print Labels"}
             </button>
             <button
               className="second-button"
               type="button"
               onClick={handleSendToZebra}
-              disabled={isSending}
+              disabled={isSending || isPrinting || !codes.length || !canPrint}
             >
               {isSending ? "Sending to Zebra..." : "Send to Zebra Printer"}
             </button>
           </div>
+          {!canPrint && (
+            <div className="warning-banner">
+              Your account does not have print permission. Contact an administrator to enable printer access.
+            </div>
+          )}
         </div>
 
         <div className="card output-section">
@@ -163,6 +234,48 @@ export default function PalletPage() {
             <pre className="pre-code">{zplText || "Generate labels to view ZPL output."}</pre>
           </div>
         </div>
+
+        <div className="card" style={{ marginTop: "20px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <h2>Print History</h2>
+            <span style={{ fontSize: "14px", color: "#6b7280" }}>{printHistory.length} entries</span>
+          </div>
+          {printHistory.length ? (
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr style={{ borderBottom: "1px solid #e5e7eb" }}>
+                    <th style={{ textAlign: "left", padding: "10px" }}>When</th>
+                    <th style={{ textAlign: "left", padding: "10px" }}>Action</th>
+                    <th style={{ textAlign: "left", padding: "10px" }}>Location</th>
+                    <th style={{ textAlign: "left", padding: "10px" }}>Codes</th>
+                    <th style={{ textAlign: "left", padding: "10px" }}>User</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {printHistory.map((entry) => (
+                    <tr key={entry.id} style={{ borderBottom: "1px solid #f3f4f6" }}>
+                      <td style={{ padding: "10px" }}>{new Date(entry.createdAt).toLocaleString()}</td>
+                      <td style={{ padding: "10px" }}>{entry.action}</td>
+                      <td style={{ padding: "10px" }}>{entry.location}</td>
+                      <td style={{ padding: "10px" }}>{entry.codes.join(", ")}</td>
+                      <td style={{ padding: "10px" }}>{entry.user}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p style={{ color: "#6b7280", marginTop: "12px" }}>No pallet print history yet. Print or send a label to create the first record.</p>
+          )}
+        </div>
+        <NotificationModal
+          open={!!notification}
+          title={notification?.title ?? "Notification"}
+          message={notification?.message ?? ""}
+          type={notification?.type ?? "warning"}
+          onClose={() => setNotification(null)}
+        />
       </div>
     </ProtectedPage>
   );

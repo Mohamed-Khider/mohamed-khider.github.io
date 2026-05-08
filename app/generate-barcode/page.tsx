@@ -3,12 +3,21 @@
 import { useEffect, useRef, useState } from "react";
 import JsBarcode from "jsbarcode";
 import ProtectedPage from "../components/ProtectedPage";
+import NotificationModal from "../components/NotificationModal";
+import PageHeader from "../components/PageHeader";
 import { sendZplToPrinter } from "../lib/printService";
+import { getCurrentUser, hasPermission } from "../lib/userManagement";
 
 export default function GenerateBarcodePage() {
   const [value, setValue] = useState("");
   const [printerIp, setPrinterIp] = useState("");
+  const [isPrinting, setIsPrinting] = useState(false);
+  const [isSending, setIsSending] = useState(false);
+  const [notification, setNotification] = useState<{ title: string; message: string; type: "warning" | "success" | "info" } | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
+
+  const currentUser = getCurrentUser();
+  const canPrint = hasPermission(currentUser, "print_labels");
 
   useEffect(() => {
     if (!value || !svgRef.current) {
@@ -24,21 +33,47 @@ export default function GenerateBarcodePage() {
     });
   }, [value]);
 
-  const [isSending, setIsSending] = useState(false);
-
   const zplText = value
     ? `^XA\n^BY3,2,100\n^FO50,50^BCN,100,Y,N,N\n^FD${value}^FS\n^FO50,180^A0N,40,40\n^FD${value}^FS\n^XZ`
     : "";
 
-  const handlePrint = () => {
-    if (!value) return;
+  const openNotification = (title: string, message: string, type: "warning" | "success" | "info" = "warning") => {
+    setNotification({ title, message, type });
+  };
+
+  const handlePrint = async () => {
+    if (!value) {
+      openNotification("No Value", "Enter a barcode value before printing.", "warning");
+      return;
+    }
+
+    if (!canPrint) {
+      openNotification("Permission Required", "Your account does not have permission to print labels.", "warning");
+      return;
+    }
+
     if (!confirm(`Print label for: ${value}?`)) return;
-    window.print();
+    setIsPrinting(true);
+
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      window.print();
+      openNotification("Printed Successfully", "Your barcode label was sent to the printer.", "success");
+    } catch (error) {
+      openNotification("Print Failed", String(error), "warning");
+    } finally {
+      setIsPrinting(false);
+    }
   };
 
   const handleSendToZebra = async () => {
     if (!zplText) {
-      alert("Enter a barcode value before sending to the Zebra printer.");
+      openNotification("No ZPL Output", "Enter a barcode value before sending to the Zebra printer.", "warning");
+      return;
+    }
+
+    if (!canPrint) {
+      openNotification("Permission Required", "Your account does not have permission to send labels to the Zebra printer.", "warning");
       return;
     }
 
@@ -46,9 +81,9 @@ export default function GenerateBarcodePage() {
 
     try {
       await sendZplToPrinter(zplText, printerIp || undefined);
-      alert("ZPL sent to the Zebra printer via server.");
+      openNotification("ZPL Sent", "ZPL was successfully sent to the Zebra printer.", "success");
     } catch (error) {
-      alert(String(error));
+      openNotification("Printer Error", String(error), "warning");
     } finally {
       setIsSending(false);
     }
@@ -57,12 +92,12 @@ export default function GenerateBarcodePage() {
   return (
     <ProtectedPage>
       <div className="container">
-        <div className="page-header">
-          <div>
-            <h1>Single Barcode Generator</h1>
-            <p>Create one barcode label and print it directly.</p>
-          </div>
-        </div>
+        <PageHeader
+          title="Single Barcode Generator"
+          subtitle="Create one barcode label and print it directly."
+          showBack={true}
+          showLogout={true}
+        />
 
         <div className="card">
           <div className="form-field">
@@ -92,20 +127,25 @@ export default function GenerateBarcodePage() {
             <button
               className="primary-button"
               type="button"
-              disabled={!value.trim()}
+              disabled={!value.trim() || isPrinting || !canPrint}
               onClick={handlePrint}
             >
-              Print Label
+              {isPrinting ? "Printing..." : "Print Label"}
             </button>
             <button
               className="second-button"
               type="button"
-              disabled={!value.trim() || isSending}
+              disabled={!value.trim() || isSending || isPrinting || !canPrint}
               onClick={handleSendToZebra}
             >
               {isSending ? "Sending to Zebra..." : "Send to Zebra Printer"}
             </button>
           </div>
+          {!canPrint && (
+            <div className="warning-banner">
+              Your account does not have print permission. Contact an administrator to enable printer access.
+            </div>
+          )}
         </div>
 
         <div className="card preview-panel" id="print-only">
@@ -119,6 +159,13 @@ export default function GenerateBarcodePage() {
             <p>Enter a value to generate a live preview.</p>
           )}
         </div>
+          <NotificationModal
+            open={!!notification}
+            title={notification?.title ?? "Notification"}
+            message={notification?.message ?? ""}
+            type={notification?.type ?? "warning"}
+            onClose={() => setNotification(null)}
+          />
       </div>
     </ProtectedPage>
   );

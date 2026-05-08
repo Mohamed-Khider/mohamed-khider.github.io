@@ -5,10 +5,14 @@ import JsBarcode from "jsbarcode";
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
 import ProtectedPage from "../components/ProtectedPage";
+import NotificationModal from "../components/NotificationModal";
+import PageHeader from "../components/PageHeader";
 
 export default function GenerateMultiBarcodePage() {
   const [input, setInput] = useState("");
   const [codes, setCodes] = useState<string[]>([]);
+  const [isPrinting, setIsPrinting] = useState(false);
+  const [notification, setNotification] = useState<{ title: string; message: string; type: "warning" | "success" | "info" } | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   const handleGenerate = () => {
@@ -35,6 +39,29 @@ export default function GenerateMultiBarcodePage() {
     pdf.save("barcodes.pdf");
   };
 
+  const openNotification = (title: string, message: string, type: "warning" | "success" | "info" = "info") => {
+    setNotification({ title, message, type });
+  };
+
+  const handlePrint = async () => {
+    if (codes.length === 0) {
+      openNotification("Nothing to Print", "Generate barcode labels before printing.", "warning");
+      return;
+    }
+
+    setIsPrinting(true);
+
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      window.print();
+      openNotification("Printed Successfully", "Your barcode labels were sent to the printer.", "success");
+    } catch (error) {
+      openNotification("Print Failed", String(error), "warning");
+    } finally {
+      setIsPrinting(false);
+    }
+  };
+
   const preview = useMemo(
     () => codes.length > 0,
     [codes]
@@ -43,12 +70,12 @@ export default function GenerateMultiBarcodePage() {
   return (
     <ProtectedPage>
       <div className="container">
-        <div className="page-header">
-          <div>
-            <h1>Multi Barcode Generator</h1>
-            <p>Paste a list of codes and generate printable barcode labels.</p>
-          </div>
-        </div>
+        <PageHeader
+          title="Multi Barcode Generator"
+          subtitle="Paste a list of codes and generate printable barcode labels."
+          showBack={true}
+          showLogout={true}
+        />
 
         <div className="card">
           <div className="form-field">
@@ -65,8 +92,8 @@ export default function GenerateMultiBarcodePage() {
             <button className="primary-button" type="button" onClick={handleGenerate}>
               Generate
             </button>
-            <button className="second-button" type="button" onClick={() => window.print()}>
-              Print
+            <button className="second-button" type="button" onClick={handlePrint} disabled={!codes.length || isPrinting}>
+              {isPrinting ? "Printing..." : "Print"}
             </button>
             <button className="second-button" type="button" onClick={handleDownloadPDF}>
               Download PDF
@@ -101,6 +128,13 @@ export default function GenerateMultiBarcodePage() {
             <p>Generate labels to preview your barcode grid.</p>
           )}
         </div>
+        <NotificationModal
+          open={!!notification}
+          title={notification?.title ?? "Notification"}
+          message={notification?.message ?? ""}
+          type={notification?.type ?? "info"}
+          onClose={() => setNotification(null)}
+        />
       </div>
     </ProtectedPage>
   );
