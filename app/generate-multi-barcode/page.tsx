@@ -1,0 +1,107 @@
+"use client";
+
+import { useMemo, useRef, useState } from "react";
+import JsBarcode from "jsbarcode";
+import html2canvas from "html2canvas";
+import { jsPDF } from "jspdf";
+import ProtectedPage from "../components/ProtectedPage";
+
+export default function GenerateMultiBarcodePage() {
+  const [input, setInput] = useState("");
+  const [codes, setCodes] = useState<string[]>([]);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  const handleGenerate = () => {
+    const values = input
+      .split("\n")
+      .map((item) => item.trim())
+      .filter(Boolean);
+
+    setCodes(values);
+  };
+
+  const handleDownloadPDF = async () => {
+    if (!containerRef.current || codes.length === 0) {
+      return;
+    }
+
+    const canvas = await html2canvas(containerRef.current, { scale: 2 });
+    const imgData = canvas.toDataURL("image/png");
+    const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+    const pageWidth = 210;
+    const pageHeight = (canvas.height * pageWidth) / canvas.width;
+
+    pdf.addImage(imgData, "PNG", 0, 0, pageWidth, pageHeight);
+    pdf.save("barcodes.pdf");
+  };
+
+  const preview = useMemo(
+    () => codes.length > 0,
+    [codes]
+  );
+
+  return (
+    <ProtectedPage>
+      <div className="container">
+        <div className="page-header">
+          <div>
+            <h1>Multi Barcode Generator</h1>
+            <p>Paste a list of codes and generate printable barcode labels.</p>
+          </div>
+        </div>
+
+        <div className="card">
+          <div className="form-field">
+            <label htmlFor="barcodeList">Barcode list</label>
+            <textarea
+              id="barcodeList"
+              value={input}
+              onChange={(event) => setInput(event.target.value)}
+              placeholder="Paste one barcode value per line..."
+            />
+          </div>
+
+          <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+            <button className="primary-button" type="button" onClick={handleGenerate}>
+              Generate
+            </button>
+            <button className="second-button" type="button" onClick={() => window.print()}>
+              Print
+            </button>
+            <button className="second-button" type="button" onClick={handleDownloadPDF}>
+              Download PDF
+            </button>
+          </div>
+        </div>
+
+        <div className="card preview-panel">
+          <h2>Label Grid</h2>
+          {preview ? (
+            <div ref={containerRef} className="preview-grid" id="print-only">
+              {codes.map((code) => (
+                <div key={code} className="label-card">
+                  <svg
+                    ref={(element) => {
+                      if (element) {
+                        JsBarcode(element, code, {
+                          format: "CODE128",
+                          width: 1.5,
+                          height: 40,
+                          displayValue: false,
+                          margin: 0,
+                        });
+                      }
+                    }}
+                  />
+                  <div className="label-value">{code}</div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p>Generate labels to preview your barcode grid.</p>
+          )}
+        </div>
+      </div>
+    </ProtectedPage>
+  );
+}

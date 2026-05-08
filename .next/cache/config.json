@@ -1,6 +1,7 @@
 {
 	"telemetry": {
-		"anonymousId": "9bb723b7258317e29c153f791c00f72460bf163ac522c111a086071e48a3042e",
-		"salt": "2efcb29f1c08244f8c6b41790ad2c04a"
+		"notifiedAt": "1778185458217",
+		"anonymousId": "6ed6c54995b90eb73146930cedcc14c32479615f546a55bfdec0d02f150b5aa8",
+		"salt": "41ffdbf3a8f89688741317824a30bbe2"
 	}
 }
