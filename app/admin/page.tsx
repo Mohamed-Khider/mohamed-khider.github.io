@@ -227,6 +227,8 @@ export default function AdminPage() {
                   onChange={(e) => setFormData({ ...formData, role: e.target.value as UserRole })}
                 >
                   <option value="user">User</option>
+                  <option value="operator">Operator</option>
+                  <option value="supervisor">Supervisor</option>
                   <option value="admin">Admin</option>
                 </select>
               </div>
@@ -234,7 +236,7 @@ export default function AdminPage() {
               <div className="form-field">
                 <label>Permissions</label>
                 <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
-                  {["generate_labels", "print_labels", "manage_inventory"].map((permission) => (
+                  {['receive_goods', 'move_stock', 'print_labels', 'manage_locations', 'view_reports', 'manage_inventory', 'create_shipments', 'adjust_inventory'].map((permission) => (
                     <label key={permission} style={{ display: "flex", alignItems: "center", gap: "4px" }}>
                       <input
                         type="checkbox"
@@ -246,7 +248,7 @@ export default function AdminPage() {
                           setFormData({ ...formData, permissions: newPermissions });
                         }}
                       />
-                      {permission.replace("_", " ").replace(/\b\w/g, l => l.toUpperCase())}
+                      {permission.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase())}
                     </label>
                   ))}
                 </div>

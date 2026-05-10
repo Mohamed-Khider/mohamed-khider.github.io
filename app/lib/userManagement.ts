@@ -1,5 +1,5 @@
 // User management types and utilities
-export type UserRole = 'admin' | 'user';
+export type UserRole = 'admin' | 'supervisor' | 'operator' | 'user';
 
 export interface User {
   id: string;
@@ -23,7 +23,16 @@ const DEFAULT_ADMIN: User = {
   username: 'admin',
   password: '1234', // Default password
   role: 'admin',
-  permissions: ['generate_labels', 'print_labels', 'manage_inventory'],
+  permissions: [
+    'receive_goods',
+    'move_stock',
+    'print_labels',
+    'manage_locations',
+    'manage_inventory',
+    'view_reports',
+    'create_shipments',
+    'adjust_inventory',
+  ],
   email: 'admin@warehouse.com',
   createdAt: new Date().toISOString(),
 };

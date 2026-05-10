@@ -38,29 +38,71 @@ export default function MainPage() {
           </div>
         </div>
 
-        <div className="card-grid">
-          <button className="link-card" onClick={() => router.push("/pallet")}
-            type="button">
+        <div style={{ display: "grid", gap: 26, gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}>
+          <button className="link-card" onClick={() => router.push("/receive")} type="button">
+            <span className="material-icons">inventory_2</span>
+            <h2>Receive Goods</h2>
+            <p>Log inbound shipments and stage inventory.</p>
+          </button>
+
+          <button className="link-card" onClick={() => router.push("/locations")} type="button">
+            <span className="material-icons">location_on</span>
+            <h2>Locations</h2>
+            <p>Manage racks, zones, and storage assignments.</p>
+          </button>
+
+          <button className="link-card" onClick={() => router.push("/stock-movement")} type="button">
+            <span className="material-icons">swap_horiz</span>
+            <h2>Stock Movement</h2>
+            <p>Transfer products between locations safely.</p>
+          </button>
+
+          <button className="link-card" onClick={() => router.push("/shipments")} type="button">
+            <span className="material-icons">local_shipping</span>
+            <h2>Shipments</h2>
+            <p>Pick, pack, and dispatch outbound orders.</p>
+          </button>
+
+          <button className="link-card" onClick={() => router.push("/cycle-count")} type="button">
             <span className="material-icons">inventory</span>
+            <h2>Cycle Count</h2>
+            <p>Adjust stock counts and resolve discrepancies.</p>
+          </button>
+
+          <button className="link-card" onClick={() => router.push("/generate-barcode")} type="button">
+            <span className="material-symbols-outlined">qr_code</span>
+            <h2>Single Barcode</h2>
+            <p>Create and print one barcode label at a time.</p>
+          </button>
+
+          <button className="link-card" onClick={() => router.push("/generate-multi-barcode")} type="button">
+            <span className="material-symbols-outlined">grid_view</span>
+            <h2>Multi Barcode</h2>
+            <p>Generate bulk barcode labels and export PDFs.</p>
+          </button>
+
+          <button className="link-card" onClick={() => router.push("/pallet")} type="button">
+            <span className="material-symbols-outlined">inventory_2</span>
             <h2>Pallet Labels</h2>
+            <p>Generate pallet barcode sequences and ZPL output.</p>
           </button>
 
-          <button className="link-card" onClick={() => router.push("/section")}
-            type="button">
-            <span className="material-icons">grid_view</span>
+          <button className="link-card" onClick={() => router.push("/section")} type="button">
+            <span className="material-symbols-outlined">place</span>
             <h2>Section Labels</h2>
+            <p>Build section labels for warehouse rack locations.</p>
           </button>
 
-          <button className="link-card" onClick={() => router.push("/generate-multi-barcode")}
-            type="button">
-            <span className="material-symbols-outlined">barcode</span>
-            <h2>Multi Barcode Generator</h2>
+          <button className="link-card" onClick={() => router.push("/labels")} type="button">
+            <span className="material-symbols-outlined">label</span>
+            <h2>Label Hub</h2>
+            <p>Open unified label management and printer profiles.</p>
           </button>
 
-          <button className="link-card" onClick={() => router.push("/generate-barcode")}
-            type="button">
-            <span className="material-symbols-outlined">barcode</span>
-            <h2>Single Barcode Generator</h2>
+          <button className="link-card" onClick={() => router.push("/reports")} type="button">
+            <span className="material-symbols-outlined">insights</span>
+            <h2>Reports</h2>
+            <p>View stock, receipts, movements, and shipments.</p>
           </button>
         </div>
       </div>
