@@ -1,28 +1,34 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import ProtectedPage from "../components/ProtectedPage";
 import PageHeader from "../components/PageHeader";
 import NotificationModal from "../components/NotificationModal";
 import { getCurrentUser, hasPermission } from "../lib/userManagement";
-import { getPrinterProfiles, initializePrinterProfiles, getDefaultPrinterProfile, buildZpl, LabelTemplateType, PrinterProfile } from "../lib/labelManagement";
+import {
+  getPrinterProfiles,
+  initializePrinterProfiles,
+  getDefaultPrinterProfile,
+  buildZpl,
+  LABEL_SIZES,
+  LabelSizeType,
+  PrinterProfile,
+} from "../lib/labelManagement";
 import { sendZplToPrinter } from "../lib/printService";
-import PalletPage from "../pallet/page";
 
-const defaultTemplate = "single" as LabelTemplateType;
+const defaultSize = "1x3" as LabelSizeType;
 
 export default function LabelsPage() {
   const currentUser = getCurrentUser();
   const canPrint = hasPermission(currentUser, "print_labels");
 
-  const [template, setTemplate] = useState<LabelTemplateType>(defaultTemplate);
-  const [value, setValue] = useState("");
-  const [palletCode, setPalletCode] = useState("");
-  const [sectionCode, setSectionCode] = useState("");
+  const [labelValue, setLabelValue] = useState("");
+  const [selectedSize, setSelectedSize] = useState<LabelSizeType>(defaultSize);
   const [printerProfileId, setPrinterProfileId] = useState("");
   const [profiles, setProfiles] = useState<PrinterProfile[]>([]);
   const [isSending, setIsSending] = useState(false);
   const [notification, setNotification] = useState<{ title: string; message: string; type: "warning" | "success" | "info" } | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
   useEffect(() => {
     initializePrinterProfiles();
@@ -32,21 +38,88 @@ export default function LabelsPage() {
     setPrinterProfileId(defaultProfile?.id ?? "");
   }, []);
 
+
+
   const activeProfile = useMemo(
     () => profiles.find((profile) => profile.id === printerProfileId) || getDefaultPrinterProfile(),
     [printerProfileId, profiles]
   );
 
-  const zplText = useMemo(() => {
-    return buildZpl(template, {
-      value: value.trim() || "ITEM-000",
-      palletCode: palletCode.trim() || "PLT-001",
-      sectionCode: sectionCode.trim() || "SEC-A1",
-    });
-  }, [template, value, palletCode, sectionCode]);
+  const sizeOptions = LABEL_SIZES;
+  const selectedSizeData = useMemo(
+    () => LABEL_SIZES.find((size) => size.id === selectedSize) ?? LABEL_SIZES[0],
+    [selectedSize]
+  );
+
+
+  const previewHeight = Math.max(180, Math.round((selectedSizeData.height / selectedSizeData.width) * 320));
+  const zplText = useMemo(
+    () =>
+      buildZpl("single", {
+        value: labelValue.trim() || "ITEM-000",
+        size: selectedSize,
+      }),
+    [labelValue, selectedSize]
+  );
+
+  useEffect(() => {
+    const generatePreview = async () => {
+      try {
+        const res = await fetch("/api/preview", {
+          method: "POST",
+          body: JSON.stringify({
+            zpl: zplText,
+            width: selectedSizeData.width,
+            height: selectedSizeData.height,
+          }),
+        });
+
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+
+        setPreviewUrl(url);
+      } catch (err) {
+        console.error("Preview error:", err);
+      }
+    };
+
+    generatePreview();
+  }, [zplText, selectedSizeData]);
 
   const openNotification = (title: string, message: string, type: "warning" | "success" | "info" = "info") => {
     setNotification({ title, message, type });
+  };
+
+  const handlePrint = async () => {
+    if (!labelValue.trim()) {
+      openNotification("Missing Label Text", "Enter a barcode value before printing.", "warning");
+      return;
+    }
+
+    setIsSending(true);
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      window.print();
+      openNotification("Printed Successfully", "Label preview was sent to your printer.", "success");
+    } catch (err) {
+      openNotification("Print Failed", String(err), "warning");
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  const handleCopyZpl = async () => {
+    if (!zplText) {
+      openNotification("No ZPL Output", "Generate a label to copy ZPL.", "warning");
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(zplText);
+      openNotification("Copied", "ZPL code copied to clipboard.", "success");
+    } catch (err) {
+      openNotification("Copy Failed", String(err), "warning");
+    }
   };
 
   const handleSendToPrinter = async () => {
@@ -77,7 +150,7 @@ export default function LabelsPage() {
       <div className="container">
         <PageHeader
           title="Label Management"
-          subtitle="Create and dispatch warehouse labels from a single interface."
+          subtitle="Create one barcode label for standard label sizes with live preview and ZPL output."
           showBack={true}
           showLogout={true}
         />
@@ -85,53 +158,56 @@ export default function LabelsPage() {
         <div className="card">
           <div style={{ display: "grid", gap: 20 }}>
             <div className="form-field">
-              <label htmlFor="label-template">Label Template</label>
-              <select id="label-template" value={template} onChange={(event) => setTemplate(event.target.value as LabelTemplateType)}>
-                <option value="single">Single Barcode</option>
-                <option value="pallet">Pallet Label</option>
-                <option value="section">Section Label</option>
-              </select>
+              <label htmlFor="label-value">Label Text</label>
+              <input
+                id="label-value"
+                type="text"
+                value={labelValue}
+                onChange={(event) => setLabelValue(event.target.value)}
+                placeholder="Enter barcode text or SKU"
+              />
             </div>
 
-            {template === "single" && (
-              <div className="form-field">
-                <label htmlFor="label-value">Label Value</label>
-                <input
-                  id="label-value"
-                  type="text"
-                  value={value}
-                  onChange={(event) => setValue(event.target.value)}
-                  placeholder="Enter code or SKU"
-                />
-              </div>
-            )}
 
-            {template === "pallet" && (
-              // <div className="form-field">
-              //   <label htmlFor="pallet-code">Pallet Code</label>
-              //   <input
-              //     id="pallet-code"
-              //     type="text"
-              //     value={palletCode}
-              //     onChange={(event) => setPalletCode(event.target.value)}
-              //     placeholder="Enter pallet identifier"
-              //   />
-              // </div>
-              <PalletPage/>
-            )}
-
-            {template === "section" && (
-              <div className="form-field">
-                <label htmlFor="section-code">Section Code</label>
-                <input
-                  id="section-code"
-                  type="text"
-                  value={sectionCode}
-                  onChange={(event) => setSectionCode(event.target.value)}
-                  placeholder="Enter section location"
-                />
+  <div className="form-field">
+              <label>Label Size</label>
+              <select
+                value={selectedSize}
+                onChange={(e) =>
+                  setSelectedSize(e.target.value as LabelSizeType)
+                }
+              >
+                {LABEL_SIZES.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {/* <div className="form-field">
+              <label>Label Size</label>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
+                {sizeOptions.map((size) => (
+                  <button
+                    key={size.id}
+                    type="button"
+                    onClick={() => setSelectedSize(size.id)}
+                    className={selectedSize === size.id ? "active-size-button" : "size-button"}
+                    style={{
+                      border: selectedSize === size.id ? "1px solid #2563eb" : "1px solid #d1d5db",
+                      background: selectedSize === size.id ? "#eff6ff" : "#ffffff",
+                      borderRadius: 8,
+                      padding: "10px 12px",
+                      textAlign: "center",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <div style={{ fontSize: 14, fontWeight: 700 }}>{size.label}</div>
+                    <div style={{ fontSize: 12, color: "#6b7280" }}>Standard</div>
+                  </button>
+                ))}
               </div>
-            )}
+            </div> */}
 
             <div className="form-field">
               <label htmlFor="printer-profile">Printer Profile</label>
@@ -148,17 +224,68 @@ export default function LabelsPage() {
               </select>
             </div>
 
-            <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-              <button className="primary-button" type="button" onClick={handleSendToPrinter} disabled={!canPrint || isSending}>
-                {isSending ? "Sending..." : "Send to Printer"}
+            <div className="button-group">
+              <button className="primary-button" type="button" onClick={handlePrint} disabled={!labelValue.trim() || isSending}>
+                {isSending ? "Printing..." : "Print Preview"}
+              </button>
+              <button className="second-button" type="button" onClick={handleSendToPrinter} disabled={!canPrint || isSending}>
+                {isSending ? "Sending..." : "Send to Zebra"}
+              </button>
+              <button className="copy-button" type="button" onClick={handleCopyZpl}>
+                Copy ZPL
               </button>
             </div>
           </div>
         </div>
 
         <div className="card" style={{ marginTop: 24 }}>
-          <h3>Label Preview</h3>
-          <pre className="pre-code">{zplText}</pre>
+          <div className="card-header">
+            <div>
+              <h2>Live Label Preview</h2>
+              <p className="subtle-text">Preview the barcode and label text for the selected paper size.</p>
+            </div>
+          </div>
+         
+         
+         <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>   
+            <div className="preview-card" style={{ flex: 1, minWidth: 320}}>
+              <div
+                style={{
+   
+                display: "flex",
+                height: "100%",
+                width: "100%",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+               
+                  {previewUrl ? (
+                    <img
+                      src={previewUrl}
+                      alt="ZPL Preview"
+                      style={{
+                        flex:1,
+                        width: "100%",
+                        height: "auto",
+                        padding: 12,
+                        objectFit: "contain",
+                      }}
+                    />
+                  ) : (
+                    <span style={{ fontSize: 24, color: "#999" }}>
+                      Generating preview...
+                    </span>
+                  )}
+                </div>
+            </div>
+
+            <div  style={{ flex: 1, minWidth: 320}}>
+              <pre className="pre-code" style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", minHeight: previewHeight }}>
+                {zplText}
+              </pre>
+            </div>
+          </div>
         </div>
 
         <NotificationModal

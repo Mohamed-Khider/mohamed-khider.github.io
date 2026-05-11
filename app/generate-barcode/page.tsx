@@ -42,17 +42,11 @@ export default function GenerateBarcodePage() {
   };
 
   const handlePrint = async () => {
-    if (!value) {
+    if (!value.trim()) {
       openNotification("No Value", "Enter a barcode value before printing.", "warning");
       return;
     }
 
-    if (!canPrint) {
-      openNotification("Permission Required", "Your account does not have permission to print labels.", "warning");
-      return;
-    }
-
-    if (!confirm(`Print label for: ${value}?`)) return;
     setIsPrinting(true);
 
     try {
@@ -63,6 +57,20 @@ export default function GenerateBarcodePage() {
       openNotification("Print Failed", String(error), "warning");
     } finally {
       setIsPrinting(false);
+    }
+  };
+
+  const handleCopyZpl = async () => {
+    if (!zplText) {
+      openNotification("No ZPL Output", "Enter a barcode value before copying ZPL.", "warning");
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(zplText);
+      openNotification("Copied", "ZPL code copied to clipboard.", "success");
+    } catch (error) {
+      openNotification("Copy Failed", String(error), "warning");
     }
   };
 
@@ -123,14 +131,14 @@ export default function GenerateBarcodePage() {
             />
           </div>
 
-          <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+          <div className="button-group">
             <button
               className="primary-button"
               type="button"
-              disabled={!value.trim() || isPrinting || !canPrint}
+              disabled={!value.trim() || isPrinting}
               onClick={handlePrint}
             >
-              {isPrinting ? "Printing..." : "Print Label"}
+              {isPrinting ? "Printing..." : "Print Preview"}
             </button>
             <button
               className="second-button"
@@ -138,7 +146,10 @@ export default function GenerateBarcodePage() {
               disabled={!value.trim() || isSending || isPrinting || !canPrint}
               onClick={handleSendToZebra}
             >
-              {isSending ? "Sending to Zebra..." : "Send to Zebra Printer"}
+              {isSending ? "Sending..." : "Send to Zebra"}
+            </button>
+            <button className="copy-button" type="button" onClick={handleCopyZpl}>
+              Copy ZPL
             </button>
           </div>
           {!canPrint && (
@@ -148,11 +159,16 @@ export default function GenerateBarcodePage() {
           )}
         </div>
 
-        <div className="card preview-panel" id="print-only">
-          <h2>Label Preview</h2>
+        <div className="card" id="print-only">
+          <div className="card-header">
+            <div>
+              <h2>Live Label Preview</h2>
+              <p className="subtle-text">A clean preview for the selected barcode and label text.</p>
+            </div>
+          </div>
           {value ? (
-            <div className="label-card">
-              <svg ref={svgRef} />
+            <div className="preview-card" style={{ maxWidth: 420, margin: "0 auto" }}>
+              <svg ref={svgRef} style={{ width: "100%", height: "140px" }} />
               <div className="label-value">{value}</div>
             </div>
           ) : (

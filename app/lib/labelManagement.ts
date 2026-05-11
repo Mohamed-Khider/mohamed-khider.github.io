@@ -1,4 +1,31 @@
 export type LabelTemplateType = "single" | "pallet" | "section";
+export type LabelSizeType =
+  | "1x3"
+  | "1.125x1.25"
+  | "1.1875x1"
+  | "1.2x0.85"
+  | "1.25x1"
+  | "2x1"
+  | "2.2x0.5"
+  | "2.25x1.25"
+  | "2.25x2.5"
+  | "2.25x0.5"
+  | "2.25x2"
+  | "3x3"
+  | "3x2"
+  | "4x1.5"
+  | "4x2"
+  | "4x2.5"
+  | "4x3"
+  | "4x5"
+  | "4x6";
+
+export interface LabelSize {
+  id: LabelSizeType;
+  label: string;
+  width: number;
+  height: number;
+}
 
 export interface PrinterProfile {
   id: string;
@@ -17,6 +44,73 @@ const DEFAULT_PRINTER_PROFILES: PrinterProfile[] = [
     default: true,
   },
 ];
+
+export const LABEL_SIZES: LabelSize[] = [
+  { id: "1x3", label: '1" x 3"', width: 609, height: 203 },
+  { id: "1.125x1.25", label: '1.125" x 1.25"', width: 229, height: 254 },
+  { id: "1.1875x1", label: '1.1875" x 1"', width: 241, height: 203 },
+  { id: "1.2x0.85", label: '1.2" x 0.85"', width: 244, height: 173 },
+  { id: "1.25x1", label: '1.25" x 1"', width: 254, height: 203 },
+  { id: "2x1", label: '2" x 1"', width: 406, height: 203 },
+  { id: "2.2x0.5", label: '2.2" x 0.5"', width: 447, height: 102 },
+  { id: "2.25x1.25", label: '2.25" x 1.25"', width: 457, height: 254 },
+  { id: "2.25x2.5", label: '2.25" x 2.5"', width: 457, height: 508 },
+  { id: "2.25x0.5", label: '2.25" x 0.5"', width: 457, height: 102 },
+  { id: "2.25x2", label: '2.25" x 2"', width: 457, height: 406 },
+  { id: "3x3", label: '3" x 3"', width: 609, height: 609 },
+  { id: "3x2", label: '3" x 2"', width: 609, height: 406 },
+  { id: "4x1.5", label: '4" x 1.5"', width: 812, height: 305 },
+  { id: "4x2", label: '4" x 2"', width: 812, height: 406 },
+  { id: "4x2.5", label: '4" x 2.5"', width: 812, height: 508 },
+  { id: "4x3", label: '4" x 3"', width: 812, height: 609 },
+  { id: "4x5", label: '4" x 5"', width: 812, height: 1015 },
+  { id: "4x6", label: '4" x 6"', width: 812, height: 1218 },
+];
+
+function getSizeById(sizeId: LabelSizeType): LabelSize {
+  return LABEL_SIZES.find((size) => size.id === sizeId) ?? LABEL_SIZES[0];
+}
+
+function buildSingleLabelZpl(value: string, sizeId: LabelSizeType): string {
+  const size = getSizeById(sizeId);
+
+  const moduleWidth = size.width > 500 ? 3 : 2;
+  const barcodeHeight = Math.max(80, Math.min(140, Math.floor(size.height * 0.35)));
+  const textHeight = Math.max(16, Math.min(40, Math.floor(size.height * 0.18)));
+  const barcodeWidth = calculateBarcodeWidth(value, moduleWidth);
+  const startX = Math.max(0, Math.floor((size.width - barcodeWidth) / 2));
+
+  const barcodeY = 20;
+  const textY = barcodeY + barcodeHeight + 10;
+
+  return `^XA
+^PW${size.width}
+^LL${size.height}
+^LH0,0
+
+^FO${startX},${barcodeY}
+^BY${moduleWidth},2,${barcodeHeight}
+^FB${size.width},1,0,C,0
+^BCN,${barcodeHeight},N,N,N
+^FD${value}
+^FS
+
+^FO0,${textY}
+^A0N,${textHeight},${textHeight}
+^FB${size.width},1,0,C,0
+^FD${value}
+^FS
+
+^XZ`;
+}
+
+function calculateBarcodeWidth(value: string, moduleWidth: number) {
+  const charCount = value.length;
+
+  const totalModules = charCount * 11 + 35; // Code128 formula
+
+  return totalModules * moduleWidth;
+}
 
 function getProfilesFromStorage(): PrinterProfile[] {
   if (typeof window === "undefined") return [];
@@ -59,6 +153,7 @@ export function addPrinterProfile(profile: Omit<PrinterProfile, "id">): PrinterP
   return newProfile;
 }
 
+
 export function updatePrinterProfile(profileId: string, updates: Partial<Omit<PrinterProfile, "id">>): boolean {
   const profiles = getPrinterProfiles();
   const index = profiles.findIndex((profile) => profile.id === profileId);
@@ -87,7 +182,8 @@ export function buildZpl(template: LabelTemplateType, data: Record<string, strin
     case "single":
     default: {
       const value = data.value ?? "ITEM-000";
-      return `^XA\n^BY3,2,100\n^FO50,50^BCN,100,Y,N,N^FD${value}^FS\n^FO50,180^A0N,40,40^FD${value}^FS\n^XZ`;
+      const size = (data.size as LabelSizeType) ?? "1x3";
+      return buildSingleLabelZpl(value, size);
     }
   }
 }

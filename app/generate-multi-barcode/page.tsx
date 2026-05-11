@@ -39,8 +39,39 @@ export default function GenerateMultiBarcodePage() {
     pdf.save("barcodes.pdf");
   };
 
+  const multiZplText = useMemo(() => {
+    if (!codes.length) {
+      return "";
+    }
+
+    let y = 40;
+    let zpl = `^XA\n^PW812\n^LL1218\n^BY3,2,100\n\n`;
+
+    codes.forEach((code) => {
+      zpl += `^FO50,${y}\n^BCN,100,Y,N,N\n^FD${code}^FS\n\n`;
+      y += 180;
+    });
+
+    zpl += "^XZ";
+    return zpl;
+  }, [codes]);
+
   const openNotification = (title: string, message: string, type: "warning" | "success" | "info" = "info") => {
     setNotification({ title, message, type });
+  };
+
+  const handleCopyZpl = async () => {
+    if (!multiZplText) {
+      openNotification("No ZPL Output", "Generate barcodes before copying ZPL.", "warning");
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(multiZplText);
+      openNotification("Copied", "Multi-barcode ZPL copied to clipboard.", "success");
+    } catch (error) {
+      openNotification("Copy Failed", String(error), "warning");
+    }
   };
 
   const handlePrint = async () => {
@@ -88,21 +119,29 @@ export default function GenerateMultiBarcodePage() {
             />
           </div>
 
-          <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+          <div className="button-group">
             <button className="primary-button" type="button" onClick={handleGenerate}>
               Generate
             </button>
             <button className="second-button" type="button" onClick={handlePrint} disabled={!codes.length || isPrinting}>
               {isPrinting ? "Printing..." : "Print"}
             </button>
-            <button className="second-button" type="button" onClick={handleDownloadPDF}>
+            <button className="copy-button" type="button" onClick={handleCopyZpl} disabled={!codes.length}>
+              Copy ZPL
+            </button>
+            <button className="second-button" type="button" onClick={handleDownloadPDF} disabled={!codes.length}>
               Download PDF
             </button>
           </div>
         </div>
 
-        <div className="card preview-panel">
-          <h2>Label Grid</h2>
+        <div className="card" style={{ marginTop: 20 }}>
+          <div className="card-header">
+            <div>
+              <h2>Label Grid Preview</h2>
+              <p className="subtle-text">Review your barcode labels before printing or exporting.</p>
+            </div>
+          </div>
           {preview ? (
             <div ref={containerRef} className="preview-grid" id="print-only">
               {codes.map((code) => (
@@ -127,6 +166,10 @@ export default function GenerateMultiBarcodePage() {
           ) : (
             <p>Generate labels to preview your barcode grid.</p>
           )}
+          <div style={{ marginTop: 24 }}>
+            <h2>ZPL Output</h2>
+            <pre className="pre-code">{multiZplText || "Generate labels to view ZPL output."}</pre>
+          </div>
         </div>
         <NotificationModal
           open={!!notification}

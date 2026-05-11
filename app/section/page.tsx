@@ -43,6 +43,20 @@ export default function SectionPage() {
     setNotification({ title, message, type });
   };
 
+  const handleCopyZpl = async () => {
+    if (!zplText) {
+      openNotification("No ZPL Output", "Generate labels before copying ZPL.", "warning");
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(zplText);
+      openNotification("Copied", "Section ZPL copied to clipboard.", "success");
+    } catch (error) {
+      openNotification("Copy Failed", String(error), "warning");
+    }
+  };
+
   const handleGenerate = () => {
     if (!cValue.trim() || !sValue.trim() || !level) {
       openNotification("Missing fields", "All fields are required before generating section labels.", "warning");
@@ -196,12 +210,15 @@ export default function SectionPage() {
             />
           </div>
 
-          <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+          <div className="button-group">
             <button className="primary-button" type="button" onClick={handleGenerate}>
               Generate
             </button>
-            <button className="second-button" type="button" onClick={handlePrint} disabled={!codes.length || isPrinting || !canPrint}>
-              {isPrinting ? "Printing..." : "Print Label"}
+            <button className="second-button" type="button" onClick={handlePrint} disabled={!codes.length || isPrinting}>
+              {isPrinting ? "Printing..." : "Print Preview"}
+            </button>
+            <button className="copy-button" type="button" onClick={handleCopyZpl} disabled={!codes.length}>
+              Copy ZPL
             </button>
             <button
               className="second-button"
@@ -209,7 +226,7 @@ export default function SectionPage() {
               onClick={handleSendToZebra}
               disabled={isSending || isPrinting || !codes.length || !canPrint}
             >
-              {isSending ? "Sending to Zebra..." : "Send to Zebra Printer"}
+              {isSending ? "Sending..." : "Send to Zebra"}
             </button>
           </div>
           {!canPrint && (
