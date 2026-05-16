@@ -27,10 +27,13 @@ export interface LabelSize {
   height: number;
 }
 
+export type PrinterConnectionMethod = "wifi" | "usb" | "bluetooth";
+
 export interface PrinterProfile {
   id: string;
   name: string;
-  printerIp: string;
+  connectionMethod: PrinterConnectionMethod;
+  address: string;
   default: boolean;
 }
 
@@ -40,7 +43,8 @@ const DEFAULT_PRINTER_PROFILES: PrinterProfile[] = [
   {
     id: "printer-default",
     name: "Default Zebra Printer",
-    printerIp: "192.168.1.100",
+    connectionMethod: "wifi",
+    address: "192.168.1.100",
     default: true,
   },
 ];
@@ -137,6 +141,11 @@ export function getPrinterProfiles(): PrinterProfile[] {
 export function getDefaultPrinterProfile(): PrinterProfile | null {
   const profiles = getPrinterProfiles();
   return profiles.find((profile) => profile.default) || null;
+}
+
+export function getPrinterProfileById(profileId: string): PrinterProfile | null {
+  const profiles = getPrinterProfiles();
+  return profiles.find((profile) => profile.id === profileId) || null;
 }
 
 export function addPrinterProfile(profile: Omit<PrinterProfile, "id">): PrinterProfile {

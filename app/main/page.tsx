@@ -99,6 +99,12 @@ export default function MainPage() {
             <p>Open unified label management and printer profiles.</p>
           </button>
 
+          <button className="link-card" onClick={() => router.push("/printer-settings")} type="button">
+            <span className="material-symbols-outlined">settings</span>
+            <h2>Printer Settings</h2>
+            <p>Search, select, and configure your default Zebra printer profile.</p>
+          </button>
+
           <button className="link-card" onClick={() => router.push("/reports")} type="button">
             <span className="material-symbols-outlined">insights</span>
             <h2>Reports</h2>
