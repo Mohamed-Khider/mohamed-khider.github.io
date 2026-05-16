@@ -12,7 +12,7 @@ export interface LabelDimensions {
 }
 
 export interface BarcodeItem {
-  code: string;
+  code: any;
   label: string;
 }
 
