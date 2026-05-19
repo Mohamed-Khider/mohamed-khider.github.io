@@ -9,7 +9,7 @@ The single source of truth for all barcode generation logic.
 #### Types & Interfaces
 
 ```typescript
-type LabelSize = "2.5x1" | "4x6"
+type LabelSize = "2x1" | "4x6"
 
 interface LabelDimensions {
   width: number        // dots (1/203 inch)

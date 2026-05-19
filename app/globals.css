@@ -461,6 +461,30 @@ textarea {
     position: absolute;
     top: 0;
     left: 0;
-    width: 100%;
+    width: auto;
+    padding: 0;
+    margin: 0;
+  }
+
+  .print-page {
+    page-break-after: always;
+    box-shadow: none !important;
+    background: white !important;
+    margin: 0;
+    padding: 0;
+  }
+
+  .print-page.small-label {
+    width: 2in !important;
+    min-height: 1in !important;
+  }
+
+  .print-page.standard-label {
+    width: 4in !important;
+    min-height: 6in !important;
+  }
+
+  .print-page > div {
+    page-break-inside: avoid;
   }
 }

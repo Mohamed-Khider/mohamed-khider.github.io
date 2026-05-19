@@ -14,6 +14,7 @@ import {
   validateBarcodeCode,
   buildLocationBarcode,
   type LabelSize,
+  type LabelTemplate,
   type BarcodeItem,
 } from "../lib/barcodeGenerator";
 import {
@@ -36,16 +37,43 @@ interface LocationFormData {
   endNum: string;
 }
 
+const LABEL_TEMPLATES: Record<LabelTemplate, {
+  name: string;
+  size: LabelSize;
+  itemsPerPage: number;
+  description: string;
+}> = {
+  pallet: {
+    name: "Pallet / Location label",
+    size: "4x6",
+    itemsPerPage: 6,
+    description: "Print 6 location/pallet barcodes on one 4\" x 6\" page.",
+  },
+  shipment: {
+    name: "Shipment barcode label",
+    size: "2x1",
+    itemsPerPage: 1,
+    description: "Print one 2\" x 1\" barcode label with readable text.",
+  },
+  amazon: {
+    name: "Amazon shipment label",
+    size: "2x1",
+    itemsPerPage: 1,
+    description: "Print one 2\" x 1\" label with barcode and wrapped product description.",
+  },
+};
+
 export default function UnifiedLabelGeneratorPage() {
   // State management
   const [generationMode, setGenerationMode] = useState<GenerationMode>("single");
-  const [labelSize, setLabelSize] = useState<LabelSize>("4x6");
+  const [labelTemplate, setLabelTemplate] = useState<LabelTemplate>("pallet");
   const [printerIp, setPrinterIp] = useState("");
   const [printerProfiles, setPrinterProfiles] = useState<PrinterProfile[]>([]);
   const [selectedProfileId, setSelectedProfileId] = useState<string>("");
 
   // Single mode
   const [singleCode, setSingleCode] = useState("");
+  const [secondaryText, setSecondaryText] = useState("");
 
   // Range mode
   const [rangeStart, setRangeStart] = useState("");
@@ -68,7 +96,7 @@ export default function UnifiedLabelGeneratorPage() {
   // Generated codes
   const [barcodes, setBarcodes] = useState<BarcodeItem[]>([]);
   const [zplOutput, setZplOutput] = useState("");
-  const [currentPageIndex, setCurrentPageIndex] = useState(0);
+  const [currentPreviewPageIndex, setCurrentPreviewPageIndex] = useState(0);
 
   // UI state
   const [notification, setNotification] = useState<{
@@ -80,12 +108,10 @@ export default function UnifiedLabelGeneratorPage() {
   const [isSending, setIsSending] = useState(false);
 
   // Refs
-  const previewRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const currentUser = getCurrentUser();
   const canPrint = hasPermission(currentUser, "print_labels");
-  const dimensions = getLabelDimensions(labelSize);
 
   useEffect(() => {
     initializePrinterProfiles();
@@ -99,6 +125,9 @@ export default function UnifiedLabelGeneratorPage() {
     () => printerProfiles.find((profile) => profile.id === selectedProfileId),
     [printerProfiles, selectedProfileId]
   );
+
+  const currentTemplate = LABEL_TEMPLATES[labelTemplate];
+  const dimensions = getLabelDimensions(currentTemplate.size);
 
   // Generate barcodes based on mode
   const handleGenerate = () => {
@@ -117,7 +146,13 @@ export default function UnifiedLabelGeneratorPage() {
             error = validation.error || "Invalid barcode code";
             break;
           }
-          generated = [{ code: singleCode.trim(), label: singleCode.trim() }];
+          generated = [
+            {
+              code: singleCode.trim(),
+              label: singleCode.trim(),
+              description: secondaryText.trim() || singleCode.trim(),
+            },
+          ];
           break;
         }
 
@@ -132,7 +167,15 @@ export default function UnifiedLabelGeneratorPage() {
             error = "Invalid range";
             break;
           }
-          generated = generateBarcodeRange(`${start}-${end}`, rangePrefix);
+          generated = generateBarcodeRange(`${start}-${end}`, rangePrefix).map(
+            (item) => ({
+              ...item,
+              description:
+                labelTemplate === "pallet"
+                  ? undefined
+                  : secondaryText.trim() || item.label,
+            })
+          );
           break;
         }
 
@@ -148,6 +191,10 @@ export default function UnifiedLabelGeneratorPage() {
           generated = codes.map((code) => ({
             code,
             label: code,
+            description:
+              labelTemplate === "pallet"
+                ? undefined
+                : secondaryText.trim() || code,
           }));
           break;
         }
@@ -159,6 +206,10 @@ export default function UnifiedLabelGeneratorPage() {
             !locationForm.section
           ) {
             error = "Please fill in warehouse, zone, and section";
+            break;
+          }
+          if (labelTemplate !== "pallet") {
+            error = "Location builder requires the Pallet / Location label template.";
             break;
           }
           const start = parseInt(locationForm.startNum, 10) || 1;
@@ -193,10 +244,21 @@ export default function UnifiedLabelGeneratorPage() {
         return;
       }
 
-      setBarcodes(generated);
-      const zpl = generateZpl(generated, { labelSize });
+      const preparedBarcodes = generated.map((item) => ({
+        ...item,
+        description:
+          labelTemplate !== "pallet" && secondaryText.trim()
+            ? secondaryText.trim()
+            : item.description || item.label || item.code,
+      }));
+
+      setBarcodes(preparedBarcodes);
+      const zpl = generateZpl(preparedBarcodes, {
+        labelSize: currentTemplate.size,
+        labelTemplate,
+      });
       setZplOutput(zpl);
-      setCurrentPageIndex(0);
+      setCurrentPreviewPageIndex(0);
       openNotification(
         "Success",
         `Generated ${generated.length} barcode(s)`,
@@ -211,13 +273,18 @@ export default function UnifiedLabelGeneratorPage() {
     }
   };
 
-  // Pagination for large label previews
-  const itemsPerPage = labelSize === "2.5x1" ? 1 : 4;
+  // Preview pages of labels for printing
+  const itemsPerPage = currentTemplate.itemsPerPage;
   const totalPages = Math.ceil(barcodes.length / itemsPerPage);
-  const currentPageBarcodes = useMemo(() => {
-    const start = currentPageIndex * itemsPerPage;
-    return barcodes.slice(start, start + itemsPerPage);
-  }, [currentPageIndex, barcodes, itemsPerPage]);
+  const previewPages = useMemo(() => {
+    const pages: BarcodeItem[][] = [];
+    for (let i = 0; i < barcodes.length; i += itemsPerPage) {
+      pages.push(barcodes.slice(i, i + itemsPerPage));
+    }
+    return pages;
+  }, [barcodes, itemsPerPage]);
+
+  const currentPreviewPage = previewPages[currentPreviewPageIndex] ?? [];
 
   // Print handlers
   const handlePrint = async () => {
@@ -230,13 +297,241 @@ export default function UnifiedLabelGeneratorPage() {
     try {
       await new Promise((resolve) => setTimeout(resolve, 100));
       window.print();
-      openNotification("Sent to Printer", "Check your printer", "success");
+      openNotification("Sent to Printer", "Print dialog opened", "success");
     } catch (err) {
       openNotification("Print Failed", String(err), "warning");
     } finally {
       setIsPrinting(false);
     }
   };
+
+  const handlePrintZpl = async () => {
+    if (!zplOutput) {
+      openNotification("No ZPL", "Generate barcodes first", "warning");
+      return;
+    }
+
+    try {
+      const printWindow = window.open("", "_blank");
+      if (!printWindow) {
+        throw new Error("Unable to open ZPL print window.");
+      }
+
+      const escapeHtml = (text: string) =>
+        text
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/\"/g, "&quot;")
+          .replace(/'/g, "&#39;");
+
+      printWindow.document.write(`<!DOCTYPE html><html><head><title>Print ZPL</title><style>
+        body { margin: 20px; font-family: monospace; white-space: pre-wrap; font-size: 12px; }
+        pre { word-break: break-word; }
+      </style></head><body><pre>${escapeHtml(zplOutput)}</pre></body></html>`);
+      printWindow.document.close();
+      printWindow.focus();
+      printWindow.print();
+    } catch (err) {
+      openNotification("ZPL Print Failed", String(err), "warning");
+    }
+  };
+
+ const handleOpenBrowserPrintPreview = () => {
+  if (barcodes.length === 0) {
+    openNotification("Nothing to Preview", "Generate barcodes first", "warning");
+    return;
+  }
+
+  // Safe serialization
+  const safePages = JSON.stringify(previewPages)
+    .replace(/</g, "\\u003c")
+    .replace(/>/g, "\\u003e");
+
+  const safeZpl = JSON.stringify(zplOutput)
+    .replace(/</g, "\\u003c")
+    .replace(/>/g, "\\u003e");
+
+  const htmlContent = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Zebra Browser Print Preview</title>
+
+  <style>
+    body {
+      margin: 0;
+      font-family: Inter, system-ui, sans-serif;
+      background: #f3f4f6;
+      color: #111827;
+    }
+
+    .toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      background: white;
+      padding: 16px;
+      border-bottom: 1px solid #e5e7eb;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .toolbar button {
+      border: 1px solid #9ca3af;
+      background: white;
+      padding: 10px 14px;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+
+    .toolbar button.primary {
+      background: #2563eb;
+      color: white;
+      border: none;
+    }
+
+    .status {
+      margin-left: auto;
+      color: #6b7280;
+    }
+
+    .page {
+      width: 760px;
+      margin: 24px auto;
+      padding: 16px;
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.08);
+    }
+
+    .label-card {
+      padding: 10px;
+      border: 1px solid #d1d5db;
+      border-radius: 10px;
+      margin-bottom: 10px;
+    }
+
+    .code-text {
+      text-align: center;
+      font-weight: bold;
+      font-size: 12px;
+    }
+
+    .zpl-box {
+      background: #111827;
+      color: #f8fafc;
+      padding: 16px;
+      border-radius: 12px;
+      margin-top: 16px;
+      font-family: monospace;
+      font-size: 12px;
+      max-height: 260px;
+      overflow: auto;
+      white-space: pre-wrap;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="toolbar">
+    <button class="primary" onclick="window.print()">Print</button>
+    <button onclick="copyZpl()">Copy ZPL</button>
+    <button class="primary" onclick="sendUsb()">Send USB</button>
+    <div class="status" id="status">Ready</div>
+  </div>
+
+  <div id="preview"></div>
+
+  <div class="page">
+    <h3>ZPL Output</h3>
+    <div class="zpl-box" id="zpl"></div>
+  </div>
+
+  <script>
+    const pages = ${safePages};
+    const zplText = ${safeZpl};
+
+    const preview = document.getElementById("preview");
+    const status = document.getElementById("status");
+    const zplBox = document.getElementById("zpl");
+
+    zplBox.textContent = zplText;
+
+    function render() {
+      pages.forEach((pageItems, index) => {
+        const page = document.createElement("div");
+        page.className = "page";
+
+        pageItems.forEach(item => {
+          const card = document.createElement("div");
+          card.className = "label-card";
+
+          const text = document.createElement("div");
+          text.className = "code-text";
+          text.textContent = item.code;
+
+          card.appendChild(text);
+          page.appendChild(card);
+        });
+
+        preview.appendChild(page);
+      });
+    }
+
+    async function copyZpl() {
+      try {
+        await navigator.clipboard.writeText(zplText);
+        status.textContent = "Copied!";
+      } catch (e) {
+        status.textContent = "Copy failed";
+      }
+    }
+
+    async function sendUsb() {
+      if (!navigator.usb) {
+        status.textContent = "WebUSB not supported";
+        return;
+      }
+
+      try {
+        const device = await navigator.usb.requestDevice({
+          filters: [{ vendorId: 0x0a5f }]
+        });
+
+        await device.open();
+        if (!device.configuration) await device.selectConfiguration(1);
+
+        const iface = device.configuration.interfaces[0];
+        await device.claimInterface(iface.interfaceNumber);
+
+        const endpoint = iface.alternates[0].endpoints.find(e => e.direction === "out");
+
+        const data = new TextEncoder().encode(zplText);
+        await device.transferOut(endpoint.endpointNumber, data);
+
+        await device.close();
+
+        status.textContent = "Sent to printer";
+      } catch (e) {
+        status.textContent = "USB failed";
+      }
+    }
+
+    render();
+  </script>
+</body>
+
+</html>
+`;
+
+  const blob = new Blob([htmlContent], { type: "text/html" });
+  const url = URL.createObjectURL(blob);
+
+  window.open(url, "_blank");
+};
 
   const handleSendToZebra = async () => {
     if (!zplOutput) {
@@ -285,139 +580,51 @@ export default function UnifiedLabelGeneratorPage() {
     }
   };
 
-  const handleDownloadPdf = async () => {
-    if (barcodes.length === 0) {
-      openNotification("Nothing to Export", "Generate barcodes first", "warning");
-      return;
+const handleDownloadPdf = async () => {
+  if (barcodes.length === 0) return;
+
+  const isSmall = currentTemplate.size === "2x1";
+
+  const pdf = new jsPDF({
+    orientation: "portrait",
+    unit: "mm",
+    format: isSmall ? [50.8, 25.4] : [101.6, 152.4], // exact inches
+  });
+
+  barcodes.forEach((item, index) => {
+    if (index > 0) pdf.addPage();
+
+    const canvas = document.createElement("canvas");
+    JsBarcode(canvas, item.code, {
+      format: "CODE128",
+      width: 2,
+      height: isSmall ? 50 : 100,
+      displayValue: false,
+      margin: 0,
+    });
+
+    const img = canvas.toDataURL("image/png");
+
+    pdf.addImage(
+      img,
+      "PNG",
+      5,
+      5,
+      isSmall ? 40 : 90,
+      isSmall ? 15 : 60
+    );
+
+    pdf.setFontSize(isSmall ? 8 : 12);
+    pdf.text(item.code, 10, isSmall ? 22 : 70);
+
+    if (!isSmall && item.description) {
+      pdf.setFontSize(10);
+      pdf.text(item.description, 10, 80);
     }
+  });
 
-    try {
-      // Label dimensions in millimeters
-      const isSmallLabel = labelSize === "2.5x1";
-      const labelWidthMm = isSmallLabel ? 63.5 : 101.6;   // 2.5" or 4" in mm
-      const labelHeightMm = isSmallLabel ? 25.4 : 152.4;  // 1" or 6" in mm
-      const labelsPerPage = isSmallLabel ? 1 : 4;
-      const totalPages = Math.ceil(barcodes.length / labelsPerPage);
-
-      // Create PDF with label-sized pages
-      const pdf = new jsPDF({
-        orientation: isSmallLabel ? "landscape" : "portrait",
-        unit: "mm",
-        format: [labelWidthMm, labelHeightMm],
-      });
-
-      // Render each label page
-      for (let pageIndex = 0; pageIndex < totalPages; pageIndex++) {
-        if (pageIndex > 0) {
-          pdf.addPage([labelWidthMm, labelHeightMm]);
-        }
-
-        // Get barcodes for this page
-        const startIdx = pageIndex * labelsPerPage;
-        const endIdx = Math.min(startIdx + labelsPerPage, barcodes.length);
-        const pageItems = barcodes.slice(startIdx, endIdx);
-
-        // Create temporary div for this page
-        const pageDiv = document.createElement("div");
-        pageDiv.style.width = `${labelWidthMm}mm`;
-        pageDiv.style.height = `${labelHeightMm}mm`;
-        pageDiv.style.display = "grid";
-        pageDiv.style.gridTemplateColumns = isSmallLabel ? "1fr" : "repeat(2, 1fr)";
-        pageDiv.style.gridAutoRows = isSmallLabel ? "1fr" : "repeat(2, 1fr)";
-        pageDiv.style.gap = "0";
-        pageDiv.style.padding = "0";
-        pageDiv.style.margin = "0";
-        pageDiv.style.background = "white";
-        pageDiv.style.position = "absolute";
-        pageDiv.style.left = "-9999px";
-        pageDiv.style.top = "-9999px";
-
-        // Add each barcode to the page grid
-        pageItems.forEach((item) => {
-          const cellDiv = document.createElement("div");
-          cellDiv.style.display = "flex";
-          cellDiv.style.flexDirection = "column";
-          cellDiv.style.alignItems = "center";
-          cellDiv.style.justifyContent = "center";
-          cellDiv.style.padding = isSmallLabel ? "4px" : "8px";
-          cellDiv.style.gap = "4px";
-          cellDiv.style.background = "white";
-          cellDiv.style.border = "0.5px solid #f0f0f0";
-
-          // Create SVG for barcode
-          const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-          svg.style.maxWidth = "90%";
-          svg.style.height = isSmallLabel ? "35px" : "60px";
-
-          JsBarcode(svg, item.code, {
-            format: "CODE128",
-            width: isSmallLabel ? 1.5 : 2,
-            height: isSmallLabel ? 40 : 70,
-            displayValue: false,
-            margin: 2,
-          });
-
-          cellDiv.appendChild(svg);
-
-          // Add label text
-          const textDiv = document.createElement("div");
-          textDiv.style.fontSize = isSmallLabel ? "9px" : "11px";
-          textDiv.style.fontWeight = "600";
-          textDiv.style.textAlign = "center";
-          textDiv.style.color = "#1f2937";
-          textDiv.style.wordBreak = "break-all";
-          textDiv.style.maxWidth = "100%";
-          textDiv.style.lineHeight = "1.2";
-          textDiv.textContent = item.code;
-          cellDiv.appendChild(textDiv);
-
-          pageDiv.appendChild(cellDiv);
-        });
-
-        // Add empty cells for incomplete grid rows (for 4x6 labels)
-        if (!isSmallLabel && pageItems.length % 2 === 1) {
-          const emptyCell = document.createElement("div");
-          emptyCell.style.background = "white";
-          emptyCell.style.border = "0.5px solid #f0f0f0";
-          pageDiv.appendChild(emptyCell);
-        }
-
-        // Append to body temporarily
-        document.body.appendChild(pageDiv);
-
-        // Convert to canvas and add to PDF
-        const canvas = await html2canvas(pageDiv, {
-          scale: 2,
-          backgroundColor: "#ffffff",
-          useCORS: true,
-          logging: false,
-        });
-
-        const imgData = canvas.toDataURL("image/png");
-        pdf.addImage(imgData, "PNG", 0, 0, labelWidthMm, labelHeightMm);
-
-        // Remove temporary element
-        document.body.removeChild(pageDiv);
-      }
-
-      // Save PDF
-      pdf.save("labels.pdf");
-
-      // Open print dialog after saving
-      setTimeout(() => {
-        window.print();
-      }, 500);
-
-      openNotification(
-        "Downloaded & Printing",
-        "PDF saved and print dialog opened",
-        "success"
-      );
-    } catch (err) {
-      console.error("PDF error:", err);
-      openNotification("Download Failed", String(err), "warning");
-    }
-  };
+  pdf.save("labels.pdf");
+};
 
   const openNotification = (
     title: string,
@@ -462,13 +669,14 @@ export default function UnifiedLabelGeneratorPage() {
             </div>
 
             <div className="form-field">
-              <label>Label Size</label>
+              <label>Label Template</label>
               <select
-                value={labelSize}
-                onChange={(e) => setLabelSize(e.target.value as LabelSize)}
+                value={labelTemplate}
+                onChange={(e) => setLabelTemplate(e.target.value as LabelTemplate)}
               >
-                <option value="2.5x1">2.5" x 1" (Small)</option>
-                <option value="4x6">4" x 6" (Standard)</option>
+                <option value="pallet">Pallet / Location (4" x 6")</option>
+                <option value="shipment">Shipment Label (2" x 1")</option>
+                <option value="amazon">Amazon Label (2" x 1")</option>
               </select>
             </div>
 
@@ -701,6 +909,19 @@ export default function UnifiedLabelGeneratorPage() {
             </div>
           )}
 
+          {(labelTemplate === "shipment" || labelTemplate === "amazon") && (
+            <div className="form-field">
+              <label htmlFor="secondary-text">Label Text / Description</label>
+              <textarea
+                id="secondary-text"
+                value={secondaryText}
+                onChange={(e) => setSecondaryText(e.target.value)}
+                placeholder="Enter readable text or product description to print below the barcode"
+                style={{ minHeight: "120px" }}
+              />
+            </div>
+          )}
+
           <div className="button-group" style={{ marginTop: "20px" }}>
             <button className="primary-button" onClick={handleGenerate}>
               Generate Barcodes
@@ -714,97 +935,127 @@ export default function UnifiedLabelGeneratorPage() {
             <div className="card">
               <h3>Barcode Preview</h3>
               <p style={{ color: "#666", fontSize: "14px", marginBottom: "20px" }}>
-                Generated {barcodes.length} barcode(s) - Showing page{" "}
-                {currentPageIndex + 1} of {totalPages}
+                Generated {barcodes.length} barcode(s) across {totalPages} print page(s).
               </p>
 
               <div
                 ref={containerRef}
-                id="print-only"
                 style={{
-                  display: "grid",
-                  gridTemplateColumns:
-                    labelSize === "2.5x1" ? "1fr" : "repeat(2, 1fr)",
+                  display: "flex",
+                  flexDirection: "column",
                   gap: "20px",
                   marginBottom: "20px",
-                  padding: "20px",
-                  backgroundColor: "#f9fafb",
-                  borderRadius: "8px",
                 }}
               >
-                {currentPageBarcodes.map((item, idx) => (
+                <div id="print-only">
                   <div
-                    key={`${item.code}-${idx}`}
+                    className={`print-page ${currentTemplate.size === "2x1" ? "small-label" : "standard-label"}`}
                     style={{
-                      border: "1px solid #d1d5db",
-                      borderRadius: "8px",
-                      padding: "12px",
                       backgroundColor: "white",
+                      border: "1px solid #d1d5db",
+                      borderRadius: "12px",
+                      padding: "12px",
+                      width: currentTemplate.size === "2x1" ? "160px" : "520px",
+                      minHeight: currentTemplate.size === "2x1" ? "100px" : "920px",
+                      margin: "0 auto",
                     }}
                   >
-                    <svg
-                      ref={(element) => {
-                        if (element) {
-                          JsBarcode(element, item.code, {
-                            format: "CODE128",
-                            width: 2,
-                            height: labelSize === "2.5x1" ? 60 : 100,
-                            displayValue: false,
-                            margin: 0,
-                          });
-                        }
-                      }}
-                      style={{ width: "100%", marginBottom: "8px" }}
-                    />
+                    <div style={{ marginBottom: "12px", fontSize: "13px", color: "#334155", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span>Print Page {currentPreviewPageIndex + 1} of {totalPages}</span>
+                        <span style={{ fontSize: "12px", color: "#6b7280" }}>
+                        {currentTemplate.size === "2x1" ? "1 label per preview page" : "6 labels per preview page"}
+                      </span>
+                    </div>
                     <div
                       style={{
-                        textAlign: "center",
-                        fontSize: "12px",
-                        fontWeight: "500",
-                        color: "#374151",
-                        wordBreak: "break-word",
+                        display: "grid",
+                        gridTemplateColumns: "1fr",
+                        gap: "10px",
                       }}
                     >
-                      {item.code}
+                      {currentPreviewPage.map((item, idx) => (
+                        <div
+                          key={`${item.code}-${idx}`}
+                          style={{
+                            border: "1px solid #e5e7eb",
+                            borderRadius: "8px",
+                            padding: "8px",
+                            backgroundColor: "#f8fafc",
+                            minHeight: currentTemplate.size === "2x1" ? "40px" : "110px",
+                            display: "grid",
+                            gridTemplateRows: "auto auto",
+                            gap: "6px",
+                          }}
+                        >
+                          <svg
+                            ref={(element) => {
+                              if (element) {
+                                const parentWidth = element.parentElement?.clientWidth || element.clientWidth || 300;
+                                const charCount = item.code?.length || 0;
+                                const estimatedModules = Math.max(50, charCount * 11 + 35);
+                                const modulePx = Math.max(1, Math.floor((parentWidth - 16) / estimatedModules));
+                                JsBarcode(element, item.code, {
+                                  format: "CODE128",
+                                  width: modulePx,
+                                  height: currentTemplate.size === "2x1" ? 40 : 90,
+                                  displayValue: false,
+                                  margin: 0,
+                                });
+                              }
+                            }}
+                            style={{ width: "100%", height: currentTemplate.size === "2x1" ? "40px" : "90px" }}
+                          />
+                          <div
+                            style={{
+                              textAlign: "center",
+                              fontSize: currentTemplate.size === "2x1" ? "10px" : "12px",
+                              fontWeight: 600,
+                              color: "#1f2937",
+                              wordBreak: "break-word",
+                            }}
+                          >
+                            {item.code}
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
-                ))}
-              </div>
+                </div>
 
-              {totalPages > 1 && (
                 <div
                   style={{
                     display: "flex",
-                    justifyContent: "center",
-                    gap: "12px",
-                    marginBottom: "20px",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    gap: "10px",
+                    flexWrap: "wrap",
                   }}
                 >
                   <button
                     className="second-button"
                     onClick={() =>
-                      setCurrentPageIndex(Math.max(0, currentPageIndex - 1))
+                      setCurrentPreviewPageIndex(Math.max(0, currentPreviewPageIndex - 1))
                     }
-                    disabled={currentPageIndex === 0}
+                    disabled={currentPreviewPageIndex === 0}
                   >
-                    ← Previous
+                    ← Previous Page
                   </button>
-                  <span style={{ alignSelf: "center", minWidth: "100px", textAlign: "center" }}>
-                    Page {currentPageIndex + 1} of {totalPages}
+                  <span style={{ color: "#4b5563", fontSize: "13px" }}>
+                    Page {currentPreviewPageIndex + 1} of {totalPages}
                   </span>
                   <button
                     className="second-button"
                     onClick={() =>
-                      setCurrentPageIndex(
-                        Math.min(totalPages - 1, currentPageIndex + 1)
+                      setCurrentPreviewPageIndex(
+                        Math.min(totalPages - 1, currentPreviewPageIndex + 1)
                       )
                     }
-                    disabled={currentPageIndex === totalPages - 1}
+                    disabled={currentPreviewPageIndex === totalPages - 1}
                   >
-                    Next →
+                    Next Page →
                   </button>
                 </div>
-              )}
+              </div>
 
               <div className="button-group">
                 <button
@@ -816,6 +1067,12 @@ export default function UnifiedLabelGeneratorPage() {
                 </button>
                 <button
                   className="second-button"
+                  onClick={handleOpenBrowserPrintPreview}
+                >
+                  Zebra Browser Print Preview
+                </button>
+                <button
+                  className="second-button"
                   onClick={handleSendToZebra}
                   disabled={!canPrint || isSending}
                 >
@@ -824,8 +1081,70 @@ export default function UnifiedLabelGeneratorPage() {
                 <button className="copy-button" onClick={handleCopyZpl}>
                   Copy ZPL
                 </button>
+                <button className="second-button" onClick={handlePrintZpl}>
+                  Print ZPL
+                </button>
                 <button className="second-button" onClick={handleDownloadPdf}>
-                  📥 PDF & Print
+                  📥 Download PDF
+                </button>
+              </div>
+            </div>
+
+            {/* Zebra Printer Review */}
+            <div className="card">
+              <h3>Zebra Printer Review</h3>
+              <p style={{ color: "#4b5563", fontSize: "14px", marginBottom: "16px" }}>
+                Review your selected Zebra printer settings and label layout before sending.
+              </p>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: "16px",
+                  marginBottom: "18px",
+                }}
+              >
+                <div style={{ padding: "14px", background: "#f8fafc", borderRadius: "12px", border: "1px solid #e5e7eb" }}>
+                  <strong>Printer Type</strong>
+                  <div style={{ marginTop: "6px", color: "#374151" }}>
+                    {selectedProfile ? selectedProfile.connectionMethod.toUpperCase() : "Manual / WiFi"}
+                  </div>
+                </div>
+                <div style={{ padding: "14px", background: "#f8fafc", borderRadius: "12px", border: "1px solid #e5e7eb" }}>
+                  <strong>Printer Address</strong>
+                  <div style={{ marginTop: "6px", color: "#374151" }}>
+                    {selectedProfile?.address || printerIp || "Not configured"}
+                  </div>
+                </div>
+                <div style={{ padding: "14px", background: "#f8fafc", borderRadius: "12px", border: "1px solid #e5e7eb" }}>
+                  <strong>Label Size</strong>
+                  <div style={{ marginTop: "6px", color: "#374151" }}>
+                    {currentTemplate.size === "2x1" ? "2\" x 1\"" : "4\" x 6\""}
+                  </div>
+                </div>
+                <div style={{ padding: "14px", background: "#f8fafc", borderRadius: "12px", border: "1px solid #e5e7eb" }}>
+                  <strong>Preview Pages</strong>
+                  <div style={{ marginTop: "6px", color: "#374151" }}>
+                    {totalPages}
+                  </div>
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
+                <button
+                  className="second-button"
+                  onClick={handleOpenBrowserPrintPreview}
+                >
+                  Open Zebra Browser Print Preview
+                </button>
+                <button
+                  className="second-button"
+                  onClick={handleSendToZebra}
+                  disabled={!canPrint || isSending}
+                >
+                  {isSending ? "Sending..." : "Send to Zebra"}
+                </button>
+                <button className="copy-button" onClick={handlePrintZpl}>
+                  Print ZPL
                 </button>
               </div>
             </div>

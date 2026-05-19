@@ -3,21 +3,27 @@
  * Supports flexible label sizing, range generation, and ZPL output
  */
 
-export type LabelSize = "2.5x1" | "4x6";
+export type LabelSize = "2x1" | "4x6";
 
 export interface LabelDimensions {
   width: number; // in dots (1/203 inch)
   height: number; // in dots
+  pageHeight: number; // in dots for long continuous or grouped pages
   label: string;
 }
 
+export type LabelTemplate = "pallet" | "shipment" | "amazon";
+
 export interface BarcodeItem {
   code: string;
-  label: string;
+  label?: string;
+  description?: string;
 }
 
 export interface GenerationOptions {
   labelSize: LabelSize;
+  labelTemplate: LabelTemplate;
+  description?: string;
   startX?: number;
   startY?: number;
 }
@@ -27,14 +33,16 @@ export interface GenerationOptions {
  * Dimensions in dots (1/203 inch DPI)
  */
 const LABEL_SIZES: Record<LabelSize, LabelDimensions> = {
-  "2.5x1": {
-    width: 508,  // 2.5 inches * 203 DPI
-    height: 203,  // 1 inch * 203 DPI
-    label: "2.5\" x 1\" (Small)",
+  "2x1": {
+    width: 406, // 2 inches * 203 DPI
+    height: 203, // 1 inch * 203 DPI
+    pageHeight: 203, // single-label page by default
+    label: "2\" x 1\" (Small)",
   },
   "4x6": {
-    width: 812,  // 4 inches * 203 DPI
+    width: 812, // 4 inches * 203 DPI
     height: 1218, // 6 inches * 203 DPI
+    pageHeight: 1218, // one 4x6 page
     label: "4\" x 6\" (Standard)",
   },
 };
@@ -67,7 +75,7 @@ export function generateBarcodeRange(
     const end = parseInt(rangeMatch[2], 10);
 
     for (let i = start; i <= end; i++) {
-      const num = start.toString().length === 3 ? i.toString().padStart(3, "0") : i;
+      const num = start.toString().length === 3 ? i.toString().padStart(3, "0") : i.toString();
       let code = prefix;
 
       if (prefix) {
@@ -114,70 +122,62 @@ function calculateBarcodeWidth(value: string, moduleWidth: number): number {
 }
 
 /**
- * Generate ZPL for a single barcode on small label (2.5x1)
+ * Generate ZPL for a single barcode on small label (2" x 1")
  */
-function generateSmallLabelZpl(code: string, index: number = 0): string {
-  const dims = LABEL_SIZES["2.5x1"];
-  const moduleWidth = 2;
-  const barcodeHeight = 80;
-  const textHeight = 16;
-  const textY = barcodeHeight + 15;
-
-  return `^XA
-^PW${dims.width}
-^LL${dims.height}
-^LH0,0
-^FO30,10
-^BY${moduleWidth},2,${barcodeHeight}
-^BCN,${barcodeHeight},N,N,N
-^FD${code}^FS
-^FO30,${textY}
-^A0N,${textHeight},${textHeight}
-^FD${code}^FS
-^XZ`;
+function chooseModuleWidth(value: string, maxWidthDots: number, paddingDots = 20): number {
+  const baseModules = value.length * 11 + 35;
+  for (let mw = 1; mw <= 10; mw++) {
+    if (baseModules * mw + paddingDots <= maxWidthDots) return mw;
+  }
+  return 1;
 }
 
-/**
- * Generate ZPL for multiple barcodes on standard label (4x6)
- * Optimized to fit multiple barcodes per page
- */
-function generateStandardLabelZpl(codes: BarcodeItem[]): string {
-  const dims = LABEL_SIZES["4x6"];
-  const itemsPerPage = 4; // 4 barcodes per 4x6 label
-  const moduleWidth = 3;
+function escapeZplText(value: string): string {
+  return value.replace(/([\\^~])/g, "\\$1");
+}
+
+function generateSmallLabelZpl(item: BarcodeItem, labelTemplate: LabelTemplate): string {
+  const dims = LABEL_SIZES["2x1"];
   const barcodeHeight = 100;
-  const textHeight = 24;
+  const textHeight = 20;
+  const description = item.description || item.label || item.code;
+  const escapedDescription = escapeZplText(description || "");
+  const alignMode = labelTemplate === "amazon" ? "L" : "C";
 
-  let zpl = `^XA\n^PW${dims.width}\n^LL${dims.height}\n^LH0,0\n`;
+  let zpl = `^XA\n^PW${dims.width}\n^LL${dims.height}\n^LH40,20\n`;
+  zpl += `^FO30,10\n`;
+  zpl += `^BY3,2,100\n`;
+  zpl += `^BCN,80,Y,N,N,A\n`;
+  zpl += `^FD${escapeZplText(item.code)}^FS\n`;
 
-  // Calculate layout for 2 columns
-  const spacing = dims.height / (itemsPerPage / 2);
-  const colWidth = dims.width / 2;
-
-  codes.forEach((item, idx) => {
-    const col = idx % 2;
-    const row = Math.floor(idx / 2);
-    const xPos = col * colWidth + 20;
-    const yPos = row * spacing + 20;
-
-    zpl += `^FO${xPos},${yPos}\n`;
-    zpl += `^BY${moduleWidth},2,${barcodeHeight}\n`;
-    zpl += `^BCN,${barcodeHeight},N,N,N\n`;
-    zpl += `^FD${item.code}^FS\n`;
-    zpl += `^FO${xPos},${yPos + barcodeHeight + 5}\n`;
+  if (escapedDescription) {
+    zpl += `^FO0,150\n`;
     zpl += `^A0N,${textHeight},${textHeight}\n`;
-    zpl += `^FD${item.code}^FS\n`;
-  });
+    zpl += `^FB${dims.width},3,0,${alignMode}\n`;
+    zpl += `^FD${escapedDescription}^FS\n`;
+  }
 
   zpl += `^XZ`;
   return zpl;
 }
 
-/**
- * Generate individual ZPL for each barcode (for small labels)
- */
-export function generateIndividualZplPerBarcode(codes: BarcodeItem[]): string[] {
-  return codes.map((item, idx) => generateSmallLabelZpl(item.code, idx));
+function generatePalletLabelPageZpl(codes: BarcodeItem[]): string {
+  const dims = LABEL_SIZES["4x6"];
+  const barcodeHeight = 100;
+  const positions = [60, 260, 460, 660, 860, 1060];
+
+  let zpl = `^XA\n^PW${dims.width}\n^LL${dims.height}\n^LH0,0\n`;
+  zpl += `^BY5,2,${barcodeHeight}\n`;
+
+  codes.forEach((item, idx) => {
+    const yPos = positions[idx];
+    zpl += `^FO100,${yPos}\n`;
+    zpl += `^BCN,${barcodeHeight},Y,N,N\n`;
+    zpl += `^FD${escapeZplText(item.code)}^FS\n`;
+  });
+
+  zpl += `^XZ`;
+  return zpl;
 }
 
 /**
@@ -191,18 +191,20 @@ export function generateZpl(
     return "";
   }
 
-  if (options.labelSize === "2.5x1") {
-    // For small labels, combine all barcodes in one ZPL with page breaks
-    let zpl = "";
-    codes.forEach((item, idx) => {
-      if (idx > 0) zpl += "\n";
-      zpl += generateSmallLabelZpl(item.code, idx);
-    });
-    return zpl;
-  } else {
-    // For standard labels, organize multiple barcodes per page
-    return generateStandardLabelZpl(codes);
+  if (options.labelTemplate === "pallet") {
+    const pages: string[] = [];
+    const itemsPerPage = 6;
+    for (let i = 0; i < codes.length; i += itemsPerPage) {
+      pages.push(generatePalletLabelPageZpl(codes.slice(i, i + itemsPerPage)));
+    }
+    return pages.join("\n");
   }
+
+  const pages: string[] = [];
+  codes.forEach((item) => {
+    pages.push(generateSmallLabelZpl(item, options.labelTemplate));
+  });
+  return pages.join("\n");
 }
 
 /**
