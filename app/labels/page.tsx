@@ -14,7 +14,6 @@ import {
   validateBarcodeCode,
   buildLocationBarcode,
   type LabelSize,
-  type LabelTemplate,
   type BarcodeItem,
 } from "../lib/barcodeGenerator";
 import {
@@ -37,43 +36,16 @@ interface LocationFormData {
   endNum: string;
 }
 
-const LABEL_TEMPLATES: Record<LabelTemplate, {
-  name: string;
-  size: LabelSize;
-  itemsPerPage: number;
-  description: string;
-}> = {
-  pallet: {
-    name: "Pallet / Location label",
-    size: "4x6",
-    itemsPerPage: 6,
-    description: "Print 6 location/pallet barcodes on one 4\" x 6\" page.",
-  },
-  shipment: {
-    name: "Shipment barcode label",
-    size: "2x1",
-    itemsPerPage: 1,
-    description: "Print one 2\" x 1\" barcode label with readable text.",
-  },
-  amazon: {
-    name: "Amazon shipment label",
-    size: "2x1",
-    itemsPerPage: 1,
-    description: "Print one 2\" x 1\" label with barcode and wrapped product description.",
-  },
-};
-
 export default function UnifiedLabelGeneratorPage() {
   // State management
   const [generationMode, setGenerationMode] = useState<GenerationMode>("single");
-  const [labelTemplate, setLabelTemplate] = useState<LabelTemplate>("pallet");
+  const [labelSize, setLabelSize] = useState<LabelSize>("4x6");
   const [printerIp, setPrinterIp] = useState("");
   const [printerProfiles, setPrinterProfiles] = useState<PrinterProfile[]>([]);
   const [selectedProfileId, setSelectedProfileId] = useState<string>("");
 
   // Single mode
   const [singleCode, setSingleCode] = useState("");
-  const [secondaryText, setSecondaryText] = useState("");
 
   // Range mode
   const [rangeStart, setRangeStart] = useState("");
@@ -112,6 +84,7 @@ export default function UnifiedLabelGeneratorPage() {
 
   const currentUser = getCurrentUser();
   const canPrint = hasPermission(currentUser, "print_labels");
+  const dimensions = getLabelDimensions(labelSize);
 
   useEffect(() => {
     initializePrinterProfiles();
@@ -125,9 +98,6 @@ export default function UnifiedLabelGeneratorPage() {
     () => printerProfiles.find((profile) => profile.id === selectedProfileId),
     [printerProfiles, selectedProfileId]
   );
-
-  const currentTemplate = LABEL_TEMPLATES[labelTemplate];
-  const dimensions = getLabelDimensions(currentTemplate.size);
 
   // Generate barcodes based on mode
   const handleGenerate = () => {
@@ -146,13 +116,7 @@ export default function UnifiedLabelGeneratorPage() {
             error = validation.error || "Invalid barcode code";
             break;
           }
-          generated = [
-            {
-              code: singleCode.trim(),
-              label: singleCode.trim(),
-              description: secondaryText.trim() || singleCode.trim(),
-            },
-          ];
+          generated = [{ code: singleCode.trim(), label: singleCode.trim() }];
           break;
         }
 
@@ -167,15 +131,7 @@ export default function UnifiedLabelGeneratorPage() {
             error = "Invalid range";
             break;
           }
-          generated = generateBarcodeRange(`${start}-${end}`, rangePrefix).map(
-            (item) => ({
-              ...item,
-              description:
-                labelTemplate === "pallet"
-                  ? undefined
-                  : secondaryText.trim() || item.label,
-            })
-          );
+          generated = generateBarcodeRange(`${start}-${end}`, rangePrefix);
           break;
         }
 
@@ -191,10 +147,6 @@ export default function UnifiedLabelGeneratorPage() {
           generated = codes.map((code) => ({
             code,
             label: code,
-            description:
-              labelTemplate === "pallet"
-                ? undefined
-                : secondaryText.trim() || code,
           }));
           break;
         }
@@ -206,10 +158,6 @@ export default function UnifiedLabelGeneratorPage() {
             !locationForm.section
           ) {
             error = "Please fill in warehouse, zone, and section";
-            break;
-          }
-          if (labelTemplate !== "pallet") {
-            error = "Location builder requires the Pallet / Location label template.";
             break;
           }
           const start = parseInt(locationForm.startNum, 10) || 1;
@@ -244,19 +192,8 @@ export default function UnifiedLabelGeneratorPage() {
         return;
       }
 
-      const preparedBarcodes = generated.map((item) => ({
-        ...item,
-        description:
-          labelTemplate !== "pallet" && secondaryText.trim()
-            ? secondaryText.trim()
-            : item.description || item.label || item.code,
-      }));
-
-      setBarcodes(preparedBarcodes);
-      const zpl = generateZpl(preparedBarcodes, {
-        labelSize: currentTemplate.size,
-        labelTemplate,
-      });
+      setBarcodes(generated);
+      const zpl = generateZpl(generated, { labelSize });
       setZplOutput(zpl);
       setCurrentPreviewPageIndex(0);
       openNotification(
@@ -273,8 +210,8 @@ export default function UnifiedLabelGeneratorPage() {
     }
   };
 
-  // Preview pages of labels for printing
-  const itemsPerPage = currentTemplate.itemsPerPage;
+  // Preview pages of labels for printing — always show one label per preview page
+  const itemsPerPage = 1;
   const totalPages = Math.ceil(barcodes.length / itemsPerPage);
   const previewPages = useMemo(() => {
     const pages: BarcodeItem[][] = [];
@@ -580,51 +517,106 @@ export default function UnifiedLabelGeneratorPage() {
     }
   };
 
-const handleDownloadPdf = async () => {
-  if (barcodes.length === 0) return;
-
-  const isSmall = currentTemplate.size === "2x1";
-
-  const pdf = new jsPDF({
-    orientation: "portrait",
-    unit: "mm",
-    format: isSmall ? [50.8, 25.4] : [101.6, 152.4], // exact inches
-  });
-
-  barcodes.forEach((item, index) => {
-    if (index > 0) pdf.addPage();
-
-    const canvas = document.createElement("canvas");
-    JsBarcode(canvas, item.code, {
-      format: "CODE128",
-      width: 2,
-      height: isSmall ? 50 : 100,
-      displayValue: false,
-      margin: 0,
-    });
-
-    const img = canvas.toDataURL("image/png");
-
-    pdf.addImage(
-      img,
-      "PNG",
-      5,
-      5,
-      isSmall ? 40 : 90,
-      isSmall ? 15 : 60
-    );
-
-    pdf.setFontSize(isSmall ? 8 : 12);
-    pdf.text(item.code, 10, isSmall ? 22 : 70);
-
-    if (!isSmall && item.description) {
-      pdf.setFontSize(10);
-      pdf.text(item.description, 10, 80);
+  const handleDownloadPdf = async () => {
+    if (barcodes.length === 0) {
+      openNotification("Nothing to Export", "Generate barcodes first", "warning");
+      return;
     }
-  });
 
-  pdf.save("labels.pdf");
-};
+    try {
+      const isSmallLabel = labelSize === "2x1";
+      const labelWidthMm = isSmallLabel ? 50.8 : 101.6; // 2" or 4" in mm
+      const labelHeightMm = isSmallLabel ? 25.4 : 152.4; // 1" or 6" in mm
+      const labelsPerPage = 1;
+      const pageHeightMm = labelHeightMm;
+      const totalPages = Math.ceil(barcodes.length / labelsPerPage);
+
+      const pdf = new jsPDF({
+        orientation: "portrait",
+        unit: "mm",
+        format: [labelWidthMm, pageHeightMm],
+      });
+
+      for (let pageIndex = 0; pageIndex < totalPages; pageIndex++) {
+        if (pageIndex > 0) {
+          pdf.addPage([labelWidthMm, pageHeightMm]);
+        }
+
+        const startIdx = pageIndex * labelsPerPage;
+        const endIdx = Math.min(startIdx + labelsPerPage, barcodes.length);
+        const pageItems = barcodes.slice(startIdx, endIdx);
+
+        const pageDiv = document.createElement("div");
+        pageDiv.style.width = `${labelWidthMm}mm`;
+        pageDiv.style.height = `${pageHeightMm}mm`;
+        pageDiv.style.padding = "2px";
+        pageDiv.style.background = "white";
+        pageDiv.style.display = "flex";
+        pageDiv.style.flexDirection = "column";
+        pageDiv.style.gap = "4px";
+        pageDiv.style.position = "absolute";
+        pageDiv.style.left = "-9999px";
+        pageDiv.style.top = "-9999px";
+
+        pageItems.forEach((item) => {
+          const cellDiv = document.createElement("div");
+          cellDiv.style.display = "flex";
+          cellDiv.style.flexDirection = "column";
+          cellDiv.style.alignItems = "center";
+          cellDiv.style.justifyContent = "center";
+          cellDiv.style.width = "100%";
+          cellDiv.style.flex = "1 0 auto";
+          cellDiv.style.border = "1px solid #d1d5db";
+          cellDiv.style.padding = "2px";
+          cellDiv.style.background = "white";
+          cellDiv.style.boxSizing = "border-box";
+
+          const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+          svg.style.width = "100%";
+          svg.style.height = isSmallLabel ? "25mm" : "35mm";
+
+          JsBarcode(svg, item.code, {
+            format: "CODE128",
+            width: isSmallLabel ? 1.2 : 2,
+            height: isSmallLabel ? 100 : 220,
+            displayValue: false,
+            margin: 2,
+          });
+
+          cellDiv.appendChild(svg);
+
+          const textDiv = document.createElement("div");
+          textDiv.style.fontSize = isSmallLabel ? "14px" : "16px";
+          textDiv.style.fontWeight = "700";
+          textDiv.style.textAlign = "center";
+          textDiv.style.wordBreak = "break-word";
+          textDiv.style.width = "100%";
+          textDiv.textContent = item.code;
+          cellDiv.appendChild(textDiv);
+
+          pageDiv.appendChild(cellDiv);
+        });
+
+        document.body.appendChild(pageDiv);
+        const canvas = await html2canvas(pageDiv, {
+          scale: 2,
+          backgroundColor: "#ffffff",
+          useCORS: true,
+          logging: false,
+        });
+
+        const imgData = canvas.toDataURL("image/png");
+        pdf.addImage(imgData, "PNG", 0, 0, labelWidthMm, pageHeightMm);
+        document.body.removeChild(pageDiv);
+      }
+
+      pdf.save("labels.pdf");
+      openNotification("PDF Downloaded", "Your PDF file is ready", "success");
+    } catch (err) {
+      console.error("PDF error:", err);
+      openNotification("Download Failed", String(err), "warning");
+    }
+  };
 
   const openNotification = (
     title: string,
@@ -669,14 +661,13 @@ const handleDownloadPdf = async () => {
             </div>
 
             <div className="form-field">
-              <label>Label Template</label>
+              <label>Label Size</label>
               <select
-                value={labelTemplate}
-                onChange={(e) => setLabelTemplate(e.target.value as LabelTemplate)}
+                value={labelSize}
+                onChange={(e) => setLabelSize(e.target.value as LabelSize)}
               >
-                <option value="pallet">Pallet / Location (4" x 6")</option>
-                <option value="shipment">Shipment Label (2" x 1")</option>
-                <option value="amazon">Amazon Label (2" x 1")</option>
+                <option value="2x1">2" x 1" (Small)</option>
+                <option value="4x6">4" x 6" (Standard)</option>
               </select>
             </div>
 
@@ -909,19 +900,6 @@ const handleDownloadPdf = async () => {
             </div>
           )}
 
-          {(labelTemplate === "shipment" || labelTemplate === "amazon") && (
-            <div className="form-field">
-              <label htmlFor="secondary-text">Label Text / Description</label>
-              <textarea
-                id="secondary-text"
-                value={secondaryText}
-                onChange={(e) => setSecondaryText(e.target.value)}
-                placeholder="Enter readable text or product description to print below the barcode"
-                style={{ minHeight: "120px" }}
-              />
-            </div>
-          )}
-
           <div className="button-group" style={{ marginTop: "20px" }}>
             <button className="primary-button" onClick={handleGenerate}>
               Generate Barcodes
@@ -940,6 +918,7 @@ const handleDownloadPdf = async () => {
 
               <div
                 ref={containerRef}
+                id="print-only"
                 style={{
                   display: "flex",
                   flexDirection: "column",
@@ -947,78 +926,76 @@ const handleDownloadPdf = async () => {
                   marginBottom: "20px",
                 }}
               >
-                <div id="print-only">
+                <div
+                  className={`print-page ${labelSize === "2x1" ? "small-label" : "standard-label"}`}
+                  style={{
+                    backgroundColor: "white",
+                    border: "1px solid #d1d5db",
+                    borderRadius: "12px",
+                    padding: "12px",
+                    width: labelSize === "2x1" ? "180px" : "520px",
+                    minHeight: labelSize === "2x1" ? "160px" : "920px",
+                    margin: "0 auto",
+                  }}
+                >
+                  <div style={{ marginBottom: "12px", fontSize: "13px", color: "#334155", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span>Print Page {currentPreviewPageIndex + 1} of {totalPages}</span>
+                      <span style={{ fontSize: "12px", color: "#6b7280" }}>
+                      {labelSize === "2x1" ? "1 label per preview page" : "6 labels per preview page"}
+                    </span>
+                  </div>
                   <div
-                    className={`print-page ${currentTemplate.size === "2x1" ? "small-label" : "standard-label"}`}
                     style={{
-                      backgroundColor: "white",
-                      border: "1px solid #d1d5db",
-                      borderRadius: "12px",
-                      padding: "12px",
-                      width: currentTemplate.size === "2x1" ? "160px" : "520px",
-                      minHeight: currentTemplate.size === "2x1" ? "100px" : "920px",
-                      margin: "0 auto",
+                      display: "grid",
+                      gridTemplateColumns: "1fr",
+                      gap: "10px",
                     }}
                   >
-                    <div style={{ marginBottom: "12px", fontSize: "13px", color: "#334155", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <span>Print Page {currentPreviewPageIndex + 1} of {totalPages}</span>
-                        <span style={{ fontSize: "12px", color: "#6b7280" }}>
-                        {currentTemplate.size === "2x1" ? "1 label per preview page" : "6 labels per preview page"}
-                      </span>
-                    </div>
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "1fr",
-                        gap: "10px",
-                      }}
-                    >
-                      {currentPreviewPage.map((item, idx) => (
+                    {currentPreviewPage.map((item, idx) => (
+                      <div
+                        key={`${item.code}-${idx}`}
+                        style={{
+                          border: "1px solid #e5e7eb",
+                          borderRadius: "8px",
+                          padding: "8px",
+                          backgroundColor: "#f8fafc",
+                          minHeight: labelSize === "2x1" ? "40px" : "110px",
+                          display: "grid",
+                          gridTemplateRows: "auto auto",
+                          gap: "6px",
+                        }}
+                      >
+                        <svg
+                          ref={(element) => {
+                            if (element) {
+                              const parentWidth = element.parentElement?.clientWidth || element.clientWidth || 300;
+                              const charCount = item.code?.length || 0;
+                              const estimatedModules = Math.max(50, charCount * 11 + 35);
+                              const modulePx = Math.max(1, Math.floor((parentWidth - 16) / estimatedModules));
+                              JsBarcode(element, item.code, {
+                                format: "CODE128",
+                                width: modulePx,
+                                height: labelSize === "2x1" ? 40 : 90,
+                                displayValue: false,
+                                margin: 0,
+                              });
+                            }
+                          }}
+                          style={{ width: "100%", height: labelSize === "2x1" ? "40px" : "90px" }}
+                        />
                         <div
-                          key={`${item.code}-${idx}`}
                           style={{
-                            border: "1px solid #e5e7eb",
-                            borderRadius: "8px",
-                            padding: "8px",
-                            backgroundColor: "#f8fafc",
-                            minHeight: currentTemplate.size === "2x1" ? "40px" : "110px",
-                            display: "grid",
-                            gridTemplateRows: "auto auto",
-                            gap: "6px",
+                            textAlign: "center",
+                            fontSize: labelSize === "2x1" ? "10px" : "12px",
+                            fontWeight: 600,
+                            color: "#1f2937",
+                            wordBreak: "break-word",
                           }}
                         >
-                          <svg
-                            ref={(element) => {
-                              if (element) {
-                                const parentWidth = element.parentElement?.clientWidth || element.clientWidth || 300;
-                                const charCount = item.code?.length || 0;
-                                const estimatedModules = Math.max(50, charCount * 11 + 35);
-                                const modulePx = Math.max(1, Math.floor((parentWidth - 16) / estimatedModules));
-                                JsBarcode(element, item.code, {
-                                  format: "CODE128",
-                                  width: modulePx,
-                                  height: currentTemplate.size === "2x1" ? 40 : 90,
-                                  displayValue: false,
-                                  margin: 0,
-                                });
-                              }
-                            }}
-                            style={{ width: "100%", height: currentTemplate.size === "2x1" ? "40px" : "90px" }}
-                          />
-                          <div
-                            style={{
-                              textAlign: "center",
-                              fontSize: currentTemplate.size === "2x1" ? "10px" : "12px",
-                              fontWeight: 600,
-                              color: "#1f2937",
-                              wordBreak: "break-word",
-                            }}
-                          >
-                            {item.code}
-                          </div>
+                          {item.code}
                         </div>
-                      ))}
-                    </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
 
@@ -1119,7 +1096,7 @@ const handleDownloadPdf = async () => {
                 <div style={{ padding: "14px", background: "#f8fafc", borderRadius: "12px", border: "1px solid #e5e7eb" }}>
                   <strong>Label Size</strong>
                   <div style={{ marginTop: "6px", color: "#374151" }}>
-                    {currentTemplate.size === "2x1" ? "2\" x 1\"" : "4\" x 6\""}
+                    {labelSize === "2x1" ? "2\" x 1\"" : "4\" x 6\""}
                   </div>
                 </div>
                 <div style={{ padding: "14px", background: "#f8fafc", borderRadius: "12px", border: "1px solid #e5e7eb" }}>
