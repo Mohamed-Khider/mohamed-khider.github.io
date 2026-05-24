@@ -77,46 +77,36 @@ export default function NewPackingOrderPage() {
     openNotification("Item Added", `${newItem.name} added to list`, "success");
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+ const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
   const file = e.target.files?.[0];
   if (!file) return;
-
-  // Validate file type
-  if (!file.name.endsWith(".xlsx")) {
-    openNotification("Invalid File", "Please upload an Excel (.xlsx) file", "warning");
-    return;
-  }
 
   setUploadFile(file);
   setIsParsingFile(true);
 
   try {
-    const result = await parsePackingListExcel(file);
+    const parsedItems = await parsePackingListExcel(file);
 
-    setItems(result.validItems);
+    // 🔥 Normalize + add packedQty
+    const normalized = parsedItems.map(item => ({
+      ...item,
+      packedQty: 0,
+    }));
 
-    if (result.errors.length > 0) {
-      console.warn("Parsing warnings:", result.errors);
+    setItems(normalized);
 
-      openNotification(
-        "File Parsed with Warnings",
-        `${result.validItems.length} items loaded, ${result.errors.length} issues found`,
-        "warning"
-      );
-    } else {
-      openNotification(
-        "Success",
-        `Loaded ${result.validItems.length} items`,
-        "success"
-      );
-    }
+    openNotification(
+      "File Loaded",
+      `Loaded ${normalized.length} items`,
+      "success"
+    );
 
   } catch (error: any) {
     console.error(error);
 
     openNotification(
       "Parse Error",
-      error.message || "Failed to parse Excel file",
+      error.message || "Failed to parse file",
       "warning"
     );
   } finally {
@@ -131,33 +121,68 @@ export default function NewPackingOrderPage() {
 
   // Start packing
   const handleStartPacking = () => {
-    if (!orderId.trim()) {
-      openNotification("Validation Error", "Enter Order ID", "warning");
-      return;
+  if (!orderId.trim()) {
+    openNotification("Validation Error", "Enter Order ID", "warning");
+    return;
+  }
+
+  if (!clientName.trim()) {
+    openNotification("Validation Error", "Enter Client Name", "warning");
+    return;
+  }
+
+  if (items.length === 0) {
+    openNotification("Validation Error", "Add at least one item", "warning");
+    return;
+  }
+
+  // 🔥 Separate items
+  const unitItems = items.filter(i => i.packType === "pack_unit");
+  const packL1Items = items.filter(i => i.packType === "pack_l1");
+
+  // 🔥 Create order
+  const packingOrder = createPackingOrder(
+    orderId.trim(),
+    clientName.trim(),
+    unitItems, // ONLY unit items go to packing
+    boxIdType
+  );
+
+  // 🔥 Auto create boxes for PACK_L1
+  packL1Items.forEach(item => {
+    for (let i = 0; i < item.quantity; i++) {
+      const box = {
+        boxId:
+          boxIdType === "generated"
+            ? generateBoxId(clientName, packingOrder.boxes.length + 1)
+            : `Box ${packingOrder.boxes.length + 1}`,
+        contents: [
+          {
+            itemSku: item.sku,
+            itemName: item.name,
+            packType: item.packType,
+            quantityPacked: 1,
+            quantityRequired: item.quantity,
+            uom: item.uom,
+            timestamp: new Date().toISOString(),
+          },
+        ],
+        createdAt: new Date().toISOString(),
+        totalItems: 1,
+      };
+
+      packingOrder.boxes.push(box);
     }
 
-    if (!clientName.trim()) {
-      openNotification("Validation Error", "Enter Client Name", "warning");
-      return;
-    }
+    // mark as packed
+    item.packedQty = item.quantity;
+  });
 
-    if (items.length === 0) {
-      openNotification("Validation Error", "Add at least one item", "warning");
-      return;
-    }
+  // Save
+  sessionStorage.setItem("current_packing_order", JSON.stringify(packingOrder));
 
-    // Create packing order
-    const packingOrder = createPackingOrder(
-      orderId.trim(),
-      clientName.trim(),
-      items,
-      boxIdType
-    );
-
-    // Save to session storage and navigate
-    sessionStorage.setItem("current_packing_order", JSON.stringify(packingOrder));
-    router.push("/packing/pack");
-  };
+  router.push("/packing/pack");
+};
 
   return (
     <ProtectedPage>
@@ -248,7 +273,7 @@ export default function NewPackingOrderPage() {
             }}
           >
             <label htmlFor="file-upload" style={{ display: "block", marginBottom: "12px" }}>
-              <strong>Upload Packing List (CSV Format)</strong>
+              <strong>Upload Packing List (Excel or CSV)</strong>
             </label>
             <p style={{ fontSize: "12px", color: "#059669", marginBottom: "12px" }}>
               Format: SKU,Name,PackType,Quantity,UOM (pack_unit or pack_l1)
