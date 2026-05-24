@@ -22,7 +22,7 @@ export interface BarcodeItem {
 
 export interface GenerationOptions {
   labelSize: LabelSize;
-  labelTemplate: LabelTemplate;
+  labelTemplate?: LabelTemplate;
   description?: string;
   startX?: number;
   startY?: number;
@@ -136,7 +136,7 @@ function escapeZplText(value: string): string {
   return value.replace(/([\\^~])/g, "\\$1");
 }
 
-function generateSmallLabelZpl(item: BarcodeItem, labelTemplate: LabelTemplate): string {
+function generateSmallLabelZpl(item: BarcodeItem, labelTemplate: LabelTemplate = "shipment"): string {
   const dims = LABEL_SIZES["2x1"];
   const barcodeHeight = 100;
   const textHeight = 20;
@@ -191,7 +191,13 @@ export function generateZpl(
     return "";
   }
 
-  if (options.labelTemplate === "pallet") {
+  const labelTemplate: LabelTemplate = options.labelTemplate
+    ? options.labelTemplate
+    : options.labelSize === "4x6"
+    ? "pallet"
+    : "shipment";
+
+  if (labelTemplate === "pallet") {
     const pages: string[] = [];
     const itemsPerPage = 6;
     for (let i = 0; i < codes.length; i += itemsPerPage) {
@@ -202,7 +208,7 @@ export function generateZpl(
 
   const pages: string[] = [];
   codes.forEach((item) => {
-    pages.push(generateSmallLabelZpl(item, options.labelTemplate));
+    pages.push(generateSmallLabelZpl(item, labelTemplate));
   });
   return pages.join("\n");
 }

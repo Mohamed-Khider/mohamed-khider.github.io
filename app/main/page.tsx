@@ -110,6 +110,12 @@ export default function MainPage() {
             <h2>Reports</h2>
             <p>View stock, receipts, movements, and shipments.</p>
           </button>
+
+           <button className="link-card" onClick={() => router.push("/packing")} type="button">
+            <span className="material-symbols-outlined">insights</span>
+            <h2>Pack</h2>
+            <p>pack order and generate box labels.</p>
+          </button>
         </div>
       </div>
     </ProtectedPage>
