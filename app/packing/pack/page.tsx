@@ -13,8 +13,13 @@ import {
   type PackingOrder,
   type Box,
   type PackingItem,
+  BoxContent,
+  getPackingRecord,
+  getPackingRecords,
 } from "../../lib/packingManagement";
+import { useToast } from "../../components/ToastProvider";
 import { generatePackingListPDF, exportPackingListExcel } from "../../lib/packingExport";
+import { getInventoryItemById } from "../../lib/inventoryManagement";
 
 export default function PackingPage() {
   const router = useRouter();
@@ -24,6 +29,9 @@ export default function PackingPage() {
   const [currentBox, setCurrentBox] = useState<Box | null>(null);
   const [selectedItem, setSelectedItem] = useState<PackingItem | null>(null);
   const [quantityInput, setQuantityInput] = useState("");
+  const [scanInput, setScanInput] = useState("");
+  const { showToast } = useToast();
+  
 
   // Track quantities per item per box
   const [itemQtyInCurrentBox, setItemQtyInCurrentBox] = useState<
@@ -49,7 +57,8 @@ export default function PackingPage() {
       // Initialize first box
       if (order.boxes.length === 0) {
         const newBox = addBox(order);
-        const updatedOrder = { ...order, boxes: [newBox] };
+        // Ensure we update the order to include the newly created box
+        const updatedOrder: PackingOrder = { ...order, boxes: [...order.boxes, newBox] };
         setPackingOrder(updatedOrder);
         setCurrentBox(newBox);
       } else {
@@ -63,7 +72,7 @@ export default function PackingPage() {
   const openNotification = (
     title: string,
     message: string,
-    type: "warning" | "success" | "info" = "info"
+    type: "warning" | "success" | "info"
   ) => {
     setNotification({ title, message, type });
   };
@@ -94,21 +103,21 @@ export default function PackingPage() {
   // Add item to box
   const handleAddItemToBox = () => {
     if (!selectedItem || !currentBox || !quantityInput) {
-      openNotification("Validation Error", "Select item and enter quantity", "warning");
+      showToast("Validation Error", "Select item and enter quantity", "warning");
       return;
     }
 
     const qty = parseInt(quantityInput, 10);
 
     if (isNaN(qty) || qty <= 0) {
-      openNotification("Validation Error", "Enter valid quantity", "warning");
+      showToast("Validation Error", "Enter valid quantity", "warning");
       return;
     }
 
     const remaining = getRemainingQty(selectedItem);
 
     if (qty > remaining) {
-      openNotification(
+      showToast(
         "Quantity Exceeded",
         `Only ${remaining} ${selectedItem.uom} remaining for ${selectedItem.name}`,
         "warning"
@@ -128,7 +137,7 @@ export default function PackingPage() {
       }
     }
 
-    openNotification(
+    showToast(
       "Item Added",
       `${qty} ${selectedItem.uom} of ${selectedItem.name} added to ${currentBox.boxId}`,
       "success"
@@ -141,7 +150,7 @@ export default function PackingPage() {
   // Complete current box and start new one
   const handleCompleteBox = () => {
     if (!currentBox || currentBox.contents.length === 0) {
-      openNotification("Box Empty", "Add items before completing box", "warning");
+      showToast("Box Empty", "Add items before completing box", "warning");
       return;
     }
 
@@ -152,7 +161,7 @@ export default function PackingPage() {
       setCurrentBox(newBox);
       setItemQtyInCurrentBox({});
 
-      openNotification(
+      showToast(
         "Box Completed",
         `${currentBox.boxId} completed with ${currentBox.totalItems} items. Starting ${newBox.boxId}`,
         "success"
@@ -160,12 +169,50 @@ export default function PackingPage() {
     }
   };
 
+  // handle scan input (for future barcode scanning feature)
+ const handleScan = (value: string) => {
+  const scanned = value.trim().toLowerCase();
+
+  const foundItem = packingOrder?.items.find(
+    (item) => item.sku.toLowerCase() === scanned
+  );
+
+  if (!foundItem) {
+    showToast("Not Found", value, "warning");
+    return;
+  }
+
+  const  remaining  = getRemainingQty(foundItem);
+
+  if (remaining <= 0) {
+    showToast("Done", `${foundItem.sku} completed`, "info");
+    return;
+  }
+
+  // 👉 set selected item (IMPORTANT)
+  setSelectedItem(foundItem);
+
+  addItemToBox(currentBox, foundItem, 1);
+
+  setPackingOrder({ ...packingOrder });
+
+  showToast(
+    "Scanned",
+    `${foundItem.sku} | Remaining: ${remaining - 1}`,
+    "success"
+  );
+};
+
   // Undo last item in box
   const handleUndoLastItem = () => {
+    const [history, setHistory] = useState<BoxContent[][]>([]);
+const [redoStack, setRedoStack] = useState<BoxContent[][]>([]);
     if (!currentBox || currentBox.contents.length === 0) {
-      openNotification("No Items", "Nothing to undo", "warning");
+      showToast("No Items", "Nothing to undo", "warning");
       return;
     }
+    setHistory([...history, [...currentBox.contents]]);
+setRedoStack([]);
 
     const lastContent = currentBox.contents[currentBox.contents.length - 1];
     currentBox.contents.pop();
@@ -175,7 +222,7 @@ export default function PackingPage() {
       setPackingOrder({ ...packingOrder });
     }
 
-    openNotification(
+    showToast(
       "Item Removed",
       `Removed ${lastContent.quantityPacked} ${lastContent.uom} of ${lastContent.itemName}`,
       "info"
@@ -189,7 +236,7 @@ export default function PackingPage() {
     const validation = validatePackingComplete(packingOrder);
 
     if (!validation.valid) {
-      openNotification(
+      showToast(
         "Incomplete Packing",
         `Missing: ${validation.missing.slice(0, 2).join(", ")}...`,
         "warning"
@@ -214,7 +261,7 @@ export default function PackingPage() {
 
     sessionStorage.removeItem("current_packing_order");
 
-    openNotification(
+    showToast(
       "Packing Complete",
       "Your packing order has been saved",
       "success"
@@ -232,9 +279,9 @@ export default function PackingPage() {
 
     try {
       await generatePackingListPDF(packingOrder);
-      openNotification("PDF Exported", "Packing list saved to PDF", "success");
+      showToast("PDF Exported", "Packing list saved to PDF", "success");
     } catch (error) {
-      openNotification("Export Failed", String(error), "warning");
+      showToast("Export Failed", String(error), "warning");
     } finally {
       setIsExporting(false);
     }
@@ -247,13 +294,13 @@ export default function PackingPage() {
 
     try {
       await exportPackingListExcel(packingOrder);
-      openNotification(
+      showToast(
         "Excel Exported",
         "Packing list saved to Excel",
         "success"
       );
     } catch (error) {
-      openNotification("Export Failed", String(error), "warning");
+      showToast("Export Failed", String(error), "warning");
     } finally {
       setIsExporting(false);
     }
@@ -273,7 +320,7 @@ export default function PackingPage() {
   const completionPercent = Math.round(
     (packingOrder.boxes.reduce((sum, b) => sum + b.totalItems, 0) /
       packingOrder.items.reduce((sum, i) => sum + i.quantity, 0)) *
-      100
+    100
   );
 
   return (
@@ -284,6 +331,22 @@ export default function PackingPage() {
           subtitle={`Order: ${packingOrder.orderId} | Client: ${packingOrder.clientName}`}
           showBack={true}
           showLogout={true}
+        />
+        <input
+          autoFocus
+          value={scanInput}
+          onChange={(e) => setScanInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              handleScan(scanInput);
+              setScanInput("");
+            }
+          }}
+          style={{
+            position: "absolute",
+            opacity: 0,
+            pointerEvents: "none",
+          }}
         />
 
         {/* Progress Bar */}
@@ -326,9 +389,72 @@ export default function PackingPage() {
           </p>
         </div>
 
+       
+        {/* Detailed Progress Sidebar */}
+        <div
+          style={{
+            position: "fixed",
+            right: 0,
+            top: 80,
+            width: "300px",
+            height: "80vh",
+            overflowY: "auto",
+            background: "#fff",
+            borderLeft: "1px solid #e5e7eb",
+            padding: "12px",
+          }}
+        >
+          <h4 style={{ marginBottom: "10px" }}>📊 Progress</h4>
+
+          {packingOrder.items.map((item) => {
+            const remaining = getRemainingQty(item);
+            const packed = item.quantity - remaining;
+
+            return (
+              <div key={item.sku} style={{ marginBottom: "8px" }}>
+                <strong>{item.sku}</strong>
+                <div style={{ fontSize: "12px" }}>
+                  {packed}/{item.quantity}
+                </div>
+                <div
+                  style={{
+                    height: "6px",
+                    background: "#e5e7eb",
+                    borderRadius: "4px",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: `${(packed / item.quantity) * 100}%`,
+                      background: "#10b981",
+                      height: "100%",
+                      borderRadius: "4px",
+                    }}
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
         {/* Current Box */}
         <div className="card">
           <h3>Current Box: {currentBox.boxId}</h3>
+           {/* Box Selector */}
+        <select
+          value={currentBox.boxId}
+          onChange={(e) => {
+            const box = packingOrder.boxes.find(b => b.boxId === e.target.value);
+            if (box) setCurrentBox(box);
+          }}
+        >
+          {packingOrder.boxes.map(box => (
+            <option key={box.boxId} value={box.boxId}>
+              {box.boxId}
+            </option>
+          ))}
+        </select>
+
 
           {currentBox.contents.length > 0 && (
             <div
@@ -402,6 +528,26 @@ export default function PackingPage() {
 
         {/* Add Item to Box */}
         <div className="card">
+
+{/* Future scan input for barcode scanning */}
+          <input
+  placeholder="Scan or type SKU..."
+  value={scanInput}
+  onChange={(e) => setScanInput(e.target.value)}
+  onKeyDown={(e) => {
+    if (e.key === "Enter") {
+      handleScan(scanInput);
+      setScanInput("");
+    }
+  }}
+  style={{
+    width: "100%",
+    padding: "12px",
+    border: "2px solid #3b82f6",
+    borderRadius: "8px",
+    marginBottom: "12px",
+  }}
+/>
           <h3>Add Item to Box</h3>
 
           <div style={{ marginBottom: "16px" }}>
