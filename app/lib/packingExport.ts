@@ -3,7 +3,7 @@ import html2canvas from "html2canvas";
 import { PackingOrder } from "./packingManagement";
 
 /**
- * Generate PDF packing list
+ * Generate professional PDF packing list for B2B orders
  */
 export async function generatePackingListPDF(order: PackingOrder): Promise<void> {
   try {
@@ -17,7 +17,6 @@ export async function generatePackingListPDF(order: PackingOrder): Promise<void>
     const pageHeight = pdf.internal.pageSize.getHeight();
     let yPosition = 20;
 
-    // Helper function to add text
     const addText = (text: string, fontSize = 10, isBold = false, x = 20) => {
       pdf.setFontSize(fontSize);
       pdf.setFont("helvetica", isBold ? "bold" : "normal");
@@ -25,10 +24,10 @@ export async function generatePackingListPDF(order: PackingOrder): Promise<void>
       yPosition += fontSize / 2 + 2;
     };
 
-    // Header
-    addText(`PACKING LIST`, 16, true);
-    addText(`Order ID: ${order.orderId}`, 11, true);
-    addText(`Client: ${order.clientName}`, 10);
+    // Professional header
+    addText(`PACKING LIST`, 18, true);
+    addText(`Order ID: ${order.orderId}`, 12, true);
+    addText(`Client: ${order.clientName}`, 11);
     addText(
       `Created: ${new Date(order.createdAt).toLocaleString()}`,
       9,
@@ -44,21 +43,57 @@ export async function generatePackingListPDF(order: PackingOrder): Promise<void>
       );
     }
 
-    yPosition += 5;
+    yPosition += 8;
 
-    // Summary
+    // Summary section
     const totalItems = order.items.reduce((sum, i) => sum + i.quantity, 0);
     const totalBoxes = order.boxes.length;
 
-    addText(`Summary:`, 11, true);
+    pdf.setFillColor(220, 230, 245);
+    pdf.rect(20, yPosition - 5, pageWidth - 40, 20, "F");
+    
+    addText(`SUMMARY`, 11, true);
     pdf.setFontSize(9);
-    pdf.text(`Total Boxes: ${totalBoxes}`, 30, yPosition);
-    yPosition += 4;
-    pdf.text(`Total Items to Pack: ${totalItems}`, 30, yPosition);
-    yPosition += 8;
+    pdf.text(`Total Boxes: ${totalBoxes} | Total Items: ${totalItems} | Status: ${order.status}`, 30, yPosition);
+    yPosition += 10;
 
-    // Boxes and Contents
-    addText(`Box Details:`, 11, true);
+    yPosition += 5;
+
+    // Items to pack (from order)
+    addText(`ITEMS TO PACK:`, 11, true);
+    
+    let itemIndex = 0;
+    for (const item of order.items) {
+      if (yPosition > pageHeight - 30) {
+        pdf.addPage();
+        yPosition = 20;
+      }
+
+      itemIndex++;
+      pdf.setFontSize(9);
+      pdf.setFont("helvetica", "normal");
+      
+      const totalPacked = order.boxes.reduce((sum, box) => {
+        return sum + box.contents
+          .filter(c => c.itemSku === item.sku)
+          .reduce((s, c) => s + c.quantityPacked, 0);
+      }, 0);
+      
+      const status = totalPacked === item.quantity ? "✓ COMPLETE" : `${totalPacked}/${item.quantity}`;
+      
+      pdf.text(`${itemIndex}. ${item.sku} - ${item.name}`, 30, yPosition);
+      yPosition += 4;
+      pdf.setFontSize(8);
+      pdf.setTextColor(100);
+      pdf.text(`Required: ${item.quantity} ${item.uom} | Type: ${item.packType} | Status: ${status}`, 35, yPosition);
+      pdf.setTextColor(0);
+      yPosition += 6;
+    }
+
+    yPosition += 5;
+
+    // Box details
+    addText(`BOX CONTENTS:`, 11, true);
 
     for (const box of order.boxes) {
       if (yPosition > pageHeight - 40) {
@@ -66,19 +101,17 @@ export async function generatePackingListPDF(order: PackingOrder): Promise<void>
         yPosition = 20;
       }
 
-      // Box header
       pdf.setFillColor(200, 220, 255);
       pdf.rect(20, yPosition - 3, pageWidth - 40, 7, "F");
       pdf.setFontSize(10);
       pdf.setFont("helvetica", "bold");
       pdf.text(
-        `${box.boxId} - ${box.totalItems} items`,
+        `${box.boxId} - ${box.totalItems} items - Created: ${new Date(box.createdAt).toLocaleDateString()}`,
         25,
         yPosition + 2
       );
       yPosition += 10;
 
-      // Items in box
       for (const content of box.contents) {
         if (yPosition > pageHeight - 30) {
           pdf.addPage();
@@ -99,12 +132,12 @@ export async function generatePackingListPDF(order: PackingOrder): Promise<void>
         pdf.setFontSize(8);
         pdf.setTextColor(100);
         pdf.text(
-          `Pack Type: ${content.packType} | Required: ${content.quantityRequired}`,
+          `Pack Type: ${content.packType} | Required: ${content.quantityRequired} | Time: ${new Date(content.timestamp).toLocaleTimeString()}`,
           50,
           yPosition
         );
         pdf.setTextColor(0);
-        yPosition += 4;
+        yPosition += 5;
       }
 
       yPosition += 3;
@@ -120,7 +153,6 @@ export async function generatePackingListPDF(order: PackingOrder): Promise<void>
       yPosition
     );
 
-    // Save
     pdf.save(`packing-${order.orderId}-${Date.now()}.pdf`);
   } catch (error) {
     console.error("PDF generation error:", error);
@@ -129,18 +161,54 @@ export async function generatePackingListPDF(order: PackingOrder): Promise<void>
 }
 
 /**
- * Export packing list to Excel format (CSV)
+ * Export packing list to professional Excel format
  */
 export async function exportPackingListExcel(order: PackingOrder): Promise<void> {
   try {
     let csvContent =
-      "data:text/csv;charset=utf-8,Order ID,Client Name,Box ID,Item SKU,Item Name,Pack Type,Quantity Packed,UOM,Required Qty,Timestamp\n";
+      "data:text/csv;charset=utf-8,PACKING LIST EXPORT\n";
+    csvContent += `Order ID,${order.orderId}\n`;
+    csvContent += `Client Name,${order.clientName}\n`;
+    csvContent += `Created,${new Date(order.createdAt).toLocaleString()}\n`;
+    csvContent += `Status,${order.status}\n`;
+    csvContent += `Total Boxes,${order.boxes.length}\n`;
+    csvContent += `\n`;
+
+    // Items summary
+    csvContent += `ITEMS SUMMARY\n`;
+    csvContent += `SKU,Item Name,Pack Type,Total Required,Total Packed,Status\n`;
+
+    for (const item of order.items) {
+      const totalPacked = order.boxes.reduce((sum, box) => {
+        return sum + box.contents
+          .filter(c => c.itemSku === item.sku)
+          .reduce((s, c) => s + c.quantityPacked, 0);
+      }, 0);
+      
+      const status = totalPacked === item.quantity ? "COMPLETE" : "INCOMPLETE";
+      const row = [
+        item.sku,
+        item.name,
+        item.packType,
+        item.quantity,
+        totalPacked,
+        status
+      ]
+        .map((val) => `"${val}"`)
+        .join(",");
+      
+      csvContent += row + "\n";
+    }
+
+    csvContent += `\n`;
+
+    // Box details
+    csvContent += `BOX CONTENTS DETAILS\n`;
+    csvContent += `Box ID,Item SKU,Item Name,Pack Type,Quantity Packed,UOM,Required Qty,Timestamp\n`;
 
     for (const box of order.boxes) {
       for (const content of box.contents) {
         const row = [
-          order.orderId,
-          order.clientName,
           box.boxId,
           content.itemSku,
           content.itemName,
@@ -157,7 +225,6 @@ export async function exportPackingListExcel(order: PackingOrder): Promise<void>
       }
     }
 
-    // Create download link
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);

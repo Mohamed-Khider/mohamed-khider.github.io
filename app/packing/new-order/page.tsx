@@ -136,49 +136,16 @@ export default function NewPackingOrderPage() {
     return;
   }
 
-  // 🔥 Separate items
-  const unitItems = items.filter(i => i.packType === "pack_unit");
-  const packL1Items = items.filter(i => i.packType === "pack_l1");
-
-  // 🔥 Create order
+  // Create packing order with ALL items (both pack_unit and pack_l1)
+  // Each item will be handled during packing based on its packType
   const packingOrder = createPackingOrder(
     orderId.trim(),
     clientName.trim(),
-    unitItems, // ONLY unit items go to packing
+    items,
     boxIdType
   );
 
-  // 🔥 Auto create boxes for PACK_L1
-  packL1Items.forEach(item => {
-    for (let i = 0; i < item.quantity; i++) {
-      const box = {
-        boxId:
-          boxIdType === "generated"
-            ? generateBoxId(clientName, packingOrder.boxes.length + 1)
-            : `Box ${packingOrder.boxes.length + 1}`,
-        contents: [
-          {
-            itemSku: item.sku,
-            itemName: item.name,
-            packType: item.packType,
-            quantityPacked: 1,
-            quantityRequired: item.quantity,
-            uom: item.uom,
-            timestamp: new Date().toISOString(),
-          },
-        ],
-        createdAt: new Date().toISOString(),
-        totalItems: 1,
-      };
-
-      packingOrder.boxes.push(box);
-    }
-
-    // mark as packed
-    item.packedQty = item.quantity;
-  });
-
-  // Save
+  // Save and navigate
   sessionStorage.setItem("current_packing_order", JSON.stringify(packingOrder));
 
   router.push("/packing/pack");

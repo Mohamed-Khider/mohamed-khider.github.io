@@ -3,9 +3,11 @@
  * Handles order packing, box tracking, and packing list generation
  */
 
+import * as XLSX from "xlsx";
+
 export type BoxIdType = "number" | "generated";
 export type PackType = "pack_unit" | "pack_l1";
-import * as XLSX from "xlsx";
+export type PackingListFormat = "logiwa" | "omnifull" | "auto";
 
 export interface PackingItem {
   sku: string;
@@ -78,17 +80,162 @@ export function generateBoxId(clientName: string, boxNumber: number): string {
 }
 
 /**
+ * Detect packing list format from headers
+ */
+export function detectPackingListFormat(headers: string[]): PackingListFormat {
+  const headerLower = headers.map(h => h.toLowerCase());
+  
+  // OmniFull format indicators
+  if (headerLower.includes("*seller_sku_code") || headerLower.includes("*order_number")) {
+    return "omnifull";
+  }
+  
+  // Logiwa format indicators
+  if (headerLower.includes("reference_code") || headerLower.includes("logiwa_id")) {
+    return "logiwa";
+  }
+  
+  // Default generic format
+  return "auto";
+}
+
+/**
+ * Parse OmniFull format (Boutiqaat CSV export)
+ * Expected columns: *seller_sku_code, *quantity, barcode, etc.
+ */
+function parseOmnifullFormat(rows: any[]): PackingItem[] {
+  const skuMap = new Map<string, PackingItem>();
+
+  for (const row of rows) {
+    const getSafeValue = (keys: string[]) => {
+      for (const key of keys) {
+        for (const rowKey of Object.keys(row)) {
+          if (rowKey.toLowerCase() === key.toLowerCase() && row[rowKey]) {
+            return row[rowKey];
+          }
+        }
+      }
+      return "";
+    };
+
+    const sku = getSafeValue(["seller_sku_code", "seller_sku", "sku", "*seller_sku_code"]);
+    const quantity = Number(getSafeValue(["quantity", "*quantity", "qty"]));
+    const barcode = getSafeValue(["barcode", "product_code"]);
+
+    if (!sku || !quantity || isNaN(quantity)) continue;
+
+    const key = sku.toString().trim();
+    if (skuMap.has(key)) {
+      const existing = skuMap.get(key)!;
+      existing.quantity += Math.max(1, Math.floor(quantity));
+    } else {
+      skuMap.set(key, {
+        sku: key,
+        name: barcode || key,
+        packType: "pack_unit",
+        quantity: Math.max(1, Math.floor(quantity)),
+        uom: "PCS",
+        packedQty: 0,
+      });
+    }
+  }
+
+  return Array.from(skuMap.values());
+}
+
+/**
+ * Parse Logiwa format (Inventory management system export)
+ * Expected columns: reference_code, product_name, quantity, etc.
+ */
+function parseLogiwaFormat(rows: any[]): PackingItem[] {
+  const items: PackingItem[] = [];
+
+  for (const row of rows) {
+    const getSafeValue = (keys: string[]) => {
+      for (const key of keys) {
+        for (const rowKey of Object.keys(row)) {
+          if (rowKey.toLowerCase() === key.toLowerCase() && row[rowKey]) {
+            return row[rowKey];
+          }
+        }
+      }
+      return "";
+    };
+
+    const sku = getSafeValue(["reference_code", "product_code", "sku"]);
+    const name = getSafeValue(["product_name", "name", "description"]);
+    const quantity = Number(getSafeValue(["quantity", "qty", "quantity_required"]));
+    const packTypeRaw = getSafeValue(["pack_type", "packing_type", "packtype"]) || "unit";
+
+    if (!sku || !name || !quantity || isNaN(quantity)) continue;
+
+    items.push({
+      sku: sku.toString().trim(),
+      name: name.toString().trim(),
+      packType: packTypeRaw.toLowerCase().includes("l1") ? "pack_l1" : "pack_unit",
+      quantity: Math.max(1, Math.floor(quantity)),
+      uom: "PCS",
+      packedQty: 0,
+    });
+  }
+
+  return items;
+}
+
+/**
+ * Parse generic packing list format
+ */
+function parseGenericFormat(rows: any[]): PackingItem[] {
+  const items: PackingItem[] = [];
+
+  for (const row of rows) {
+    const getSafeValue = (keys: string[]) => {
+      for (const key of keys) {
+        const lowerKey = key.toLowerCase();
+        for (const rowKey of Object.keys(row)) {
+          if (rowKey.toLowerCase() === lowerKey && row[rowKey]) {
+            return row[rowKey];
+          }
+        }
+      }
+      return "";
+    };
+
+    const sku = getSafeValue(["sku", "SKU", "product_id", "product id"]);
+    const name = getSafeValue(["name", "product_name", "product name", "description"]);
+    const packTypeRaw = getSafeValue(["packtype", "pack_type", "pack type", "packing type"]);
+    const quantity = Number(getSafeValue(["quantity", "qty", "qnty", "quantity_required"]));
+    const uom = getSafeValue(["uom", "unit", "unit_of_measure"]) || "PCS";
+
+    if (!sku || !name || !quantity || isNaN(quantity)) {
+      console.warn(`Skipping invalid row:`, row);
+      continue;
+    }
+
+    items.push({
+      sku: sku.toString().trim(),
+      name: name.toString().trim(),
+      packType: packTypeRaw.toLowerCase().includes("l1") ? "pack_l1" : "pack_unit",
+      quantity: Math.max(1, Math.floor(quantity)),
+      uom: uom.toString().trim() || "PCS",
+      packedQty: 0,
+    });
+  }
+
+  return items;
+}
+
+/**
  * Parse packing list from Excel or CSV format
- * Expected columns (case-insensitive): SKU, Name, PackType, Quantity, UOM
+ * Supports: Generic format, OmniFull (Boutiqaat), Logiwa
  */
 export async function parsePackingListExcel(file: File): Promise<PackingItem[]> {
   try {
     let rows: any[] = [];
 
-    // 🔥 Detect file type
     if (file.name.endsWith(".xlsx") || file.type.includes("spreadsheet")) {
       const data = await file.arrayBuffer();
-      const workbook = XLSX.read(data, { header: 1 });
+      const workbook = XLSX.read(data, { type: "array" });
       
       if (!workbook.Sheets || !workbook.SheetNames || workbook.SheetNames.length === 0) {
         throw new Error("Excel file is empty or invalid");
@@ -103,7 +250,6 @@ export async function parsePackingListExcel(file: File): Promise<PackingItem[]> 
 
       rows = jsonData;
     } else {
-      // CSV/TXT parsing
       const text = await file.text();
       const lines = text.split("\n").filter((l) => l.trim());
 
@@ -111,12 +257,10 @@ export async function parsePackingListExcel(file: File): Promise<PackingItem[]> 
         throw new Error("CSV must have header row and at least one data row");
       }
 
-      // Parse header
       const headerLine = lines[0];
       const delimiter = headerLine.includes("\t") ? "\t" : ",";
       const headers = headerLine.split(delimiter).map((h) => h.trim().toLowerCase());
 
-      // Parse data rows
       for (let i = 1; i < lines.length; i++) {
         const values = lines[i].split(delimiter).map((v) => v.trim());
         const row: any = {};
@@ -129,47 +273,22 @@ export async function parsePackingListExcel(file: File): Promise<PackingItem[]> 
       }
     }
 
-    // Map column names (handle variations)
-    const items: PackingItem[] = [];
+    // Detect format and parse accordingly
+    const headers = Object.keys(rows[0] || {});
+    const format = detectPackingListFormat(headers);
+    let items: PackingItem[] = [];
 
-    for (const row of rows) {
-      // Find columns (case-insensitive)
-      const getSafeValue = (keys: string[]) => {
-        for (const key of keys) {
-          const lowerKey = key.toLowerCase();
-          for (const rowKey of Object.keys(row)) {
-            if (rowKey.toLowerCase() === lowerKey && row[rowKey]) {
-              return row[rowKey];
-            }
-          }
-        }
-        return "";
-      };
-
-      const sku = getSafeValue(["sku", "SKU", "product_id", "product id"]);
-      const name = getSafeValue(["name", "product_name", "product name", "description"]);
-      const packTypeRaw = getSafeValue(["packtype", "pack_type", "pack type", "packing type"]);
-      const quantity = Number(getSafeValue(["quantity", "qty", "qnty", "quantity_required"]));
-      const uom = getSafeValue(["uom", "unit", "unit_of_measure"]) || "PCS";
-
-      if (!sku || !name || !quantity || isNaN(quantity)) {
-        console.warn(`Skipping invalid row:`, row);
-        continue;
-      }
-
-      items.push({
-        sku: sku.toString().trim(),
-        name: name.toString().trim(),
-        packType: packTypeRaw.toLowerCase().includes("l1") ? "pack_l1" : "pack_unit",
-        quantity: Math.max(1, Math.floor(quantity)),
-        uom: uom.toString().trim() || "PCS",
-        packedQty: 0,
-      });
+    if (format === "omnifull") {
+      items = parseOmnifullFormat(rows);
+    } else if (format === "logiwa") {
+      items = parseLogiwaFormat(rows);
+    } else {
+      items = parseGenericFormat(rows);
     }
 
     if (items.length === 0) {
       throw new Error(
-        "No valid items found in file. Check format: SKU, Name, PackType, Quantity, UOM"
+        "No valid items found in file. Supported formats: Generic (SKU, Name, Quantity), OmniFull, Logiwa"
       );
     }
 
@@ -201,46 +320,13 @@ export function createPackingOrder(
 
   const boxes: Box[] = [];
 
-  items.forEach(item => {
-    if (item.packType === "pack_l1") {
-      for (let i = 0; i < item.quantity; i++) {
-        const boxNumber = boxes.length + 1;
-
-        const boxId =
-          boxIdType === "generated"
-            ? generateBoxId(clientName, boxNumber)
-            : `Box ${boxNumber}`;
-
-        boxes.push({
-          boxId,
-          contents: [
-            {
-              itemSku: item.sku,
-              itemName: item.name,
-              packType: item.packType,
-              quantityPacked: 1,
-              quantityRequired: item.quantity,
-              uom: item.uom,
-              timestamp: new Date().toISOString(),
-            },
-          ],
-          createdAt: new Date().toISOString(),
-          totalItems: 1,
-        });
-      }
-
-      // mark fully packed
-      item.packedQty = item.quantity;
-    }
-  });
-
   return {
     id: `packing-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
     orderId,
     clientName,
     boxIdType,
     items,
-    boxes, // 🔥 pre-filled with PACK_L1
+    boxes,
     createdAt: new Date().toISOString(),
     status: "in-progress",
   };
