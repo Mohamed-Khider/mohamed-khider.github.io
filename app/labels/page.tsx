@@ -193,7 +193,10 @@ export default function UnifiedLabelGeneratorPage() {
       }
 
       setBarcodes(generated);
-      const zpl = generateZpl(generated, { labelSize });
+      const zpl = generateZpl(generated, {
+  labelSize,
+  labelTemplate: "standard",
+});
       setZplOutput(zpl);
       setCurrentPreviewPageIndex(0);
       openNotification(
