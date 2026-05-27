@@ -178,6 +178,53 @@ export function updatePrinterProfile(profileId: string, updates: Partial<Omit<Pr
   return true;
 }
 
+// Layout calculation for Zebra printer (8" = 1624 dots wide at 203 DPI)
+const ZEBRA_PAGE_WIDTH = 1624; // 8 inches
+const ZEBRA_PAGE_HEIGHT = 1218; // 6 inches (standard height for labels)
+const LABEL_MARGIN = 0; // Margin between labels
+
+export interface LabelLayoutInfo {
+  labelsPerRow: number;
+  labelsPerPage: number;
+  pageWidthDots: number;
+  pageHeightDots: number;
+  labelWidthDots: number;
+  labelHeightDots: number;
+}
+
+export function calculateLabelLayout(sizeId: LabelSizeType): LabelLayoutInfo {
+  const size = getSizeById(sizeId);
+  
+  // Calculate how many labels fit per row
+  const labelsPerRow = Math.max(1, Math.floor(ZEBRA_PAGE_WIDTH / (size.width + LABEL_MARGIN)));
+  
+  // For small labels (narrow), fit multiple per page
+  // For large labels (wide), minimize per page
+  let pageHeight = ZEBRA_PAGE_HEIGHT;
+  let labelsPerPage = 1;
+  
+  if (size.width < 609) {
+    // Small labels (< 3"): can fit multiple per page
+    // Calculate how many rows fit
+    const rowsPerPage = Math.max(1, Math.floor(pageHeight / (size.height + LABEL_MARGIN)));
+    labelsPerPage = labelsPerRow * rowsPerPage;
+  } else {
+    // Large labels (>= 3"): typically 1-2 per page
+    labelsPerPage = labelsPerRow;
+    // Adjust page height to fit labels better
+    pageHeight = (labelsPerPage * size.height) + (LABEL_MARGIN * Math.max(0, labelsPerPage - 1));
+  }
+  
+  return {
+    labelsPerRow,
+    labelsPerPage,
+    pageWidthDots: ZEBRA_PAGE_WIDTH,
+    pageHeightDots: pageHeight,
+    labelWidthDots: size.width,
+    labelHeightDots: size.height,
+  };
+}
+
 export function buildZpl(template: LabelTemplateType, data: Record<string, string>): string {
   switch (template) {
     case "pallet": {
