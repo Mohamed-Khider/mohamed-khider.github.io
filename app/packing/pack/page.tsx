@@ -480,6 +480,11 @@ export default function PackingPage() {
             margin-top: 20px;
           }
         }
+        @media (max-width: 1024px) {
+          .packing-layout {
+            grid-template-columns: 1fr !important;
+          }
+        }
       `}</style>
 
       <div className="container">
@@ -492,13 +497,11 @@ export default function PackingPage() {
 
         {/* Main Layout Grid */}
         <div
+          className="packing-layout"
           style={{
             display: "grid",
             gridTemplateColumns: "1fr 320px",
             gap: "24px",
-            "@media (max-width: 1024px)": {
-              gridTemplateColumns: "1fr",
-            },
           }}
         >
           {/* Main Content Column */}

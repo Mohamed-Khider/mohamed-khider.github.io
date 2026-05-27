@@ -15,8 +15,10 @@ import {
 } from "../lib/barcodeGenerator";
 import {
   LABEL_SIZES,
-  buildZpl,
+  buildLabelSheetZpl,
   calculateLabelLayout,
+  dotsToMm,
+  getLabelPages,
   type LabelSizeType,
   type PrinterProfile,
   getPrinterProfiles,
@@ -103,6 +105,13 @@ export default function UnifiedLabelGeneratorPage() {
     () => printerProfiles.find((profile) => profile.id === selectedProfileId),
     [printerProfiles, selectedProfileId]
   );
+
+  const currentLayout = useMemo(() => calculateLabelLayout(labelSize), [labelSize]);
+
+  const getBarcodeModuleWidth = (value: string, widthPx: number) => {
+    const totalModules = Math.max(1, value.length * 11 + 35);
+    return Math.max(1, Math.min(10, Math.floor(widthPx / totalModules)));
+  };
 
   // Generate barcodes based on mode
   const handleGenerate = () => {
@@ -197,19 +206,21 @@ export default function UnifiedLabelGeneratorPage() {
         return;
       }
 
+      const invalidItem = generated.find((item) => !validateBarcodeCode(item.code).valid);
+      if (invalidItem) {
+        const validation = validateBarcodeCode(invalidItem.code);
+        openNotification(
+          "Validation Error",
+          `${invalidItem.code}: ${validation.error || "Invalid barcode code"}`,
+          "warning"
+        );
+        setBarcodes([]);
+        setZplOutput("");
+        return;
+      }
+
       setBarcodes(generated);
-      
-      // Generate ZPL for all barcodes
-      let zplOutput = "";
-      generated.forEach((item) => {
-        const zpl = buildZpl("single", {
-          value: item.code,
-          size: labelSize,
-        });
-        zplOutput += zpl + "\n";
-      });
-      
-      setZplOutput(zplOutput);
+      setZplOutput(buildLabelSheetZpl(generated, labelSize));
       setCurrentPreviewPageIndex(0);
       openNotification(
         "Success",
@@ -225,18 +236,17 @@ export default function UnifiedLabelGeneratorPage() {
     }
   };
 
-  // Preview pages of labels for printing — always show one label per preview page
-  const itemsPerPage = 1;
-  const totalPages = Math.ceil(barcodes.length / itemsPerPage);
+  // Preview pages follow the same Zebra pagination as ZPL, browser print, and PDF.
   const previewPages = useMemo(() => {
-    const pages: BarcodeItem[][] = [];
-    for (let i = 0; i < barcodes.length; i += itemsPerPage) {
-      pages.push(barcodes.slice(i, i + itemsPerPage));
-    }
-    return pages;
-  }, [barcodes, itemsPerPage]);
+    return getLabelPages(barcodes, labelSize);
+  }, [barcodes, labelSize]);
+  const totalPages = previewPages.length;
 
   const currentPreviewPage = previewPages[currentPreviewPageIndex] ?? [];
+
+  useEffect(() => {
+    setCurrentPreviewPageIndex(0);
+  }, [labelSize]);
 
   // Print handlers
   const handlePrint = async () => {
@@ -247,9 +257,8 @@ export default function UnifiedLabelGeneratorPage() {
 
     setIsPrinting(true);
     try {
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      window.print();
-      openNotification("Sent to Printer", "Print dialog opened", "success");
+      handleOpenBrowserPrintPreview();
+      openNotification("Print Preview Ready", "Use the print button in the Zebra preview window.", "success");
     } catch (err) {
       openNotification("Print Failed", String(err), "warning");
     } finally {
@@ -289,37 +298,26 @@ export default function UnifiedLabelGeneratorPage() {
     }
   };
 
- const handleOpenBrowserPrintPreview = () => {
-  if (barcodes.length === 0) {
-    openNotification("Nothing to Preview", "Generate barcodes first", "warning");
-    return;
-  }
+  const handleOpenBrowserPrintPreview = () => {
+    if (barcodes.length === 0) {
+      openNotification("Nothing to Preview", "Generate barcodes first", "warning");
+      return;
+    }
 
-  if (!labelDimensions) {
-    openNotification("Error", "Invalid label size", "warning");
-    return;
-  }
+    const layout = currentLayout;
+    const labelWidthMm = dotsToMm(layout.labelWidthDots);
+    const labelHeightMm = dotsToMm(layout.labelHeightDots);
+    const pageWidthMm = dotsToMm(layout.pageWidthDots);
+    const pageHeightMm = dotsToMm(layout.pageHeightDots);
+    const pages = getLabelPages(barcodes, labelSize);
+    const safePages = JSON.stringify(pages)
+      .replace(/</g, "\\u003c")
+      .replace(/>/g, "\\u003e");
+    const safeZpl = JSON.stringify(zplOutput)
+      .replace(/</g, "\\u003c")
+      .replace(/>/g, "\\u003e");
 
-  // Get layout info
-  const layout = calculateLabelLayout(labelSize);
-  
-  // Convert dots to mm
-  const dotsPerMm = 203 / 25.4;
-  const labelWidthMm = layout.labelWidthDots / dotsPerMm;
-  const labelHeightMm = layout.labelHeightDots / dotsPerMm;
-  const pageWidthMm = layout.pageWidthDots / dotsPerMm;
-  const pageHeightMm = layout.pageHeightDots / dotsPerMm;
-
-  // Safe serialization
-  const safeItems = JSON.stringify(barcodes)
-    .replace(/</g, "\\u003c")
-    .replace(/>/g, "\\u003e");
-
-  const safeZpl = JSON.stringify(zplOutput)
-    .replace(/</g, "\\u003c")
-    .replace(/>/g, "\\u003e");
-
-  const htmlContent = `
+    const htmlContent = `
 <!DOCTYPE html>
 <html>
 <head>
@@ -393,6 +391,7 @@ export default function UnifiedLabelGeneratorPage() {
       border: 2px solid #3b82f6;
       display: grid;
       grid-template-columns: repeat(${layout.labelsPerRow}, 1fr);
+      grid-template-rows: repeat(${layout.rowsPerPage}, 1fr);
       gap: 0;
       margin: 0 auto;
       box-shadow: 0 4px 12px rgba(0,0,0,0.15);
@@ -406,8 +405,8 @@ export default function UnifiedLabelGeneratorPage() {
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 2mm;
-      padding: 2mm;
+      gap: ${layout.sheetMode ? "1.5mm" : "2mm"};
+      padding: ${layout.sheetMode ? "2mm 4mm" : "2mm"};
       font-family: Arial, sans-serif;
     }
 
@@ -422,12 +421,12 @@ export default function UnifiedLabelGeneratorPage() {
     .barcode-container svg {
       max-width: 100%;
       max-height: 100%;
-      width: auto;
+      width: 100%;
       height: auto;
     }
 
     .label-code {
-      font-size: ${Math.max(8, labelHeightMm * 0.12)}px;
+      font-size: ${Math.max(8, Math.min(18, labelHeightMm * 0.16))}px;
       font-weight: 700;
       text-align: center;
       word-break: break-word;
@@ -502,12 +501,12 @@ export default function UnifiedLabelGeneratorPage() {
 
   <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"><\/script>
   <script>
-    const items = ${safeItems};
+    const pages = ${safePages};
     const zplText = ${safeZpl};
     const labelsPerRow = ${layout.labelsPerRow};
     const labelsPerPage = ${layout.labelsPerPage};
-    const labelWidth = ${labelWidthMm};
-    const labelHeight = ${labelHeightMm};
+    const totalCells = ${layout.labelsPerPage};
+    const barcodeHeight = ${Math.max(42, Math.min(110, Math.floor(layout.labelHeightDots * 0.48)))};
 
     const preview = document.getElementById("preview");
     const status = document.getElementById("status");
@@ -515,19 +514,15 @@ export default function UnifiedLabelGeneratorPage() {
 
     zplBox.textContent = zplText;
 
-    function render() {
-      // Arrange labels into pages
-      const pages = [];
-      for (let i = 0; i < items.length; i += labelsPerPage) {
-        pages.push(items.slice(i, i + labelsPerPage));
-      }
+    function moduleWidthFor(value, cellWidth) {
+      const totalModules = Math.max(1, value.length * 11 + 35);
+      return Math.max(1, Math.min(10, Math.floor(cellWidth / totalModules)));
+    }
 
+    function render() {
       pages.forEach(pageItems => {
         const pageDiv = document.createElement("div");
         pageDiv.className = "page";
-
-        // Calculate total cells needed (including empty ones)
-        const totalCells = labelsPerRow * Math.ceil(pageItems.length / labelsPerRow);
 
         for (let i = 0; i < totalCells; i++) {
           const item = pageItems[i];
@@ -544,8 +539,8 @@ export default function UnifiedLabelGeneratorPage() {
             try {
               JsBarcode(svg, item.code, {
                 format: "CODE128",
-                width: 2,
-                height: 60,
+                width: moduleWidthFor(item.code, cellDiv.clientWidth || ${layout.labelWidthDots}),
+                height: barcodeHeight,
                 displayValue: false,
                 margin: 0,
               });
@@ -588,11 +583,11 @@ export default function UnifiedLabelGeneratorPage() {
 </html>
 `;
 
-  const blob = new Blob([htmlContent], { type: "text/html" });
-  const url = URL.createObjectURL(blob);
+    const blob = new Blob([htmlContent], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
 
-  window.open(url, "_blank");
-};
+    window.open(url, "_blank");
+  };
 
   const handleSendToZebra = async () => {
     if (!zplOutput) {
@@ -652,15 +647,11 @@ export default function UnifiedLabelGeneratorPage() {
         throw new Error("Invalid label size");
       }
 
-      // Get layout info
-      const layout = calculateLabelLayout(labelSize);
-      
-      // Convert dots to mm
-      const dotsPerMm = 203 / 25.4;
-      const labelWidthMm = layout.labelWidthDots / dotsPerMm;
-      const labelHeightMm = layout.labelHeightDots / dotsPerMm;
-      const pageWidthMm = layout.pageWidthDots / dotsPerMm;
-      const pageHeightMm = layout.pageHeightDots / dotsPerMm;
+      const layout = currentLayout;
+      const labelWidthMm = dotsToMm(layout.labelWidthDots);
+      const labelHeightMm = dotsToMm(layout.labelHeightDots);
+      const pageWidthMm = dotsToMm(layout.pageWidthDots);
+      const pageHeightMm = dotsToMm(layout.pageHeightDots);
 
       // Create PDF with page size matching Zebra printer
       const pdf = new jsPDF({
@@ -670,10 +661,7 @@ export default function UnifiedLabelGeneratorPage() {
       });
 
       // Arrange labels into pages
-      const pages: typeof barcodes[] = [];
-      for (let i = 0; i < barcodes.length; i += layout.labelsPerPage) {
-        pages.push(barcodes.slice(i, i + layout.labelsPerPage));
-      }
+      const pages = getLabelPages(barcodes, labelSize);
 
       // Generate each page
       for (let pageIdx = 0; pageIdx < pages.length; pageIdx++) {
@@ -688,30 +676,32 @@ export default function UnifiedLabelGeneratorPage() {
         pageDiv.style.background = "white";
         pageDiv.style.display = "grid";
         pageDiv.style.gridTemplateColumns = `repeat(${layout.labelsPerRow}, 1fr)`;
+        pageDiv.style.gridTemplateRows = `repeat(${layout.rowsPerPage}, 1fr)`;
         pageDiv.style.gap = "0";
         pageDiv.style.padding = "0";
         pageDiv.style.position = "absolute";
-        pageDiv.style.left = "-9999px";
-        pageDiv.style.top = "-9999px";
+        pageDiv.style.left = "0";
+        pageDiv.style.top = "0";
+        pageDiv.style.zIndex = "-1";
         pageDiv.style.fontFamily = "Arial, sans-serif";
         pageDiv.style.boxSizing = "border-box";
 
         // Fill remaining slots with empty cells
-        const totalSlots = layout.labelsPerRow * Math.ceil(pageItems.length / layout.labelsPerRow);
+        const totalSlots = layout.labelsPerPage;
         
         for (let i = 0; i < totalSlots; i++) {
           const item = pageItems[i];
           const cellDiv = document.createElement("div");
           cellDiv.style.width = `${labelWidthMm}mm`;
           cellDiv.style.height = `${labelHeightMm}mm`;
-          cellDiv.style.border = "1px solid #ccc";
+          cellDiv.style.border = "0";
           cellDiv.style.boxSizing = "border-box";
-          cellDiv.style.padding = "2mm";
+          cellDiv.style.padding = layout.sheetMode ? "2mm 4mm" : "2mm";
           cellDiv.style.display = "flex";
           cellDiv.style.flexDirection = "column";
           cellDiv.style.alignItems = "center";
           cellDiv.style.justifyContent = "center";
-          cellDiv.style.gap = "1mm";
+          cellDiv.style.gap = layout.sheetMode ? "1.5mm" : "2mm";
           cellDiv.style.background = "white";
 
           if (item) {
@@ -725,13 +715,13 @@ export default function UnifiedLabelGeneratorPage() {
 
             const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
             svg.style.height = "100%";
-            svg.style.maxHeight = `${Math.floor(labelHeightMm * 0.5)}mm`;
-            svg.style.width = "auto";
+            svg.style.maxHeight = `${Math.floor(labelHeightMm * 0.48)}mm`;
+            svg.style.width = "100%";
 
             JsBarcode(svg, item?.code, {
               format: "CODE128",
-              width: 2,
-              height: 60,
+              width: getBarcodeModuleWidth(item.code, layout.labelWidthDots - 64),
+              height: Math.max(42, Math.min(110, Math.floor(layout.labelHeightDots * 0.48))),
               displayValue: false,
               margin: 0,
             });
@@ -741,7 +731,7 @@ export default function UnifiedLabelGeneratorPage() {
 
             // Text
             const textDiv = document.createElement("div");
-            textDiv.style.fontSize = `${Math.max(6, labelHeightMm * 0.12)}px`;
+            textDiv.style.fontSize = `${Math.max(8, Math.min(18, labelHeightMm * 0.16))}px`;
             textDiv.style.fontWeight = "700";
             textDiv.style.textAlign = "center";
             textDiv.style.wordBreak = "break-word";
@@ -1094,61 +1084,63 @@ export default function UnifiedLabelGeneratorPage() {
                     backgroundColor: "white",
                     border: "1px solid #d1d5db",
                     borderRadius: "12px",
-                    padding: "12px",
-                    width: labelSize === "2x1" ? "180px" : "520px",
-                    minHeight: labelSize === "2x1" ? "160px" : "920px",
+                    padding: "10px",
+                    width: currentLayout.sheetMode ? "420px" : `${Math.min(520, Math.max(180, currentLayout.pageWidthDots * 0.45))}px`,
+                    aspectRatio: `${currentLayout.pageWidthDots} / ${currentLayout.pageHeightDots}`,
                     margin: "0 auto",
                   }}
                 >
                   <div style={{ marginBottom: "12px", fontSize: "13px", color: "#334155", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <span>Print Page {currentPreviewPageIndex + 1} of {totalPages}</span>
                       <span style={{ fontSize: "12px", color: "#6b7280" }}>
-                      {labelSize === "2x1" ? "1 label per preview page" : "6 labels per preview page"}
+                      {currentLayout.sheetMode ? "6 labels per 4x6 page" : "1 label per page"}
                     </span>
                   </div>
                   <div
                     style={{
                       display: "grid",
-                      gridTemplateColumns: "1fr",
-                      gap: "10px",
+                      gridTemplateColumns: `repeat(${currentLayout.labelsPerRow}, 1fr)`,
+                      gridTemplateRows: `repeat(${currentLayout.rowsPerPage}, 1fr)`,
+                      gap: "0",
+                      height: "calc(100% - 28px)",
                     }}
                   >
-                    {currentPreviewPage.map((item, idx) => (
+                    {Array.from({ length: currentLayout.labelsPerPage }).map((_, idx) => {
+                      const item = currentPreviewPage[idx];
+                      return (
                       <div
-                        key={`${item.code}-${idx}`}
+                        key={item ? `${item.code}-${idx}` : `empty-${idx}`}
                         style={{
-                          border: "1px solid #e5e7eb",
-                          borderRadius: "8px",
-                          padding: "8px",
-                          backgroundColor: "#f8fafc",
-                          minHeight: labelSize === "2x1" ? "40px" : "110px",
+                          border: "1px dashed #e5e7eb",
+                          padding: currentLayout.sheetMode ? "8px 14px" : "8px",
+                          backgroundColor: "white",
                           display: "grid",
                           gridTemplateRows: "auto auto",
-                          gap: "6px",
+                          gap: currentLayout.sheetMode ? "4px" : "6px",
+                          alignItems: "center",
                         }}
                       >
+                        {item && (
+                          <>
                         <svg
                           ref={(element) => {
                             if (element) {
                               const parentWidth = element.parentElement?.clientWidth || element.clientWidth || 300;
-                              const charCount = item.code?.length || 0;
-                              const estimatedModules = Math.max(50, charCount * 11 + 35);
-                              const modulePx = Math.max(1, Math.floor((parentWidth - 16) / estimatedModules));
                               JsBarcode(element, item.code, {
                                 format: "CODE128",
-                                width: modulePx,
-                                height: labelSize === "2x1" ? 40 : 90,
+                                width: getBarcodeModuleWidth(item.code, parentWidth - 16),
+                                height: currentLayout.sheetMode ? 62 : Math.max(40, Math.min(90, currentLayout.labelHeightDots * 0.32)),
                                 displayValue: false,
                                 margin: 0,
                               });
                             }
                           }}
-                          style={{ width: "100%", height: labelSize === "2x1" ? "40px" : "90px" }}
+                          style={{ width: "100%", height: currentLayout.sheetMode ? "62px" : "48px" }}
                         />
                         <div
                           style={{
                             textAlign: "center",
-                            fontSize: labelSize === "2x1" ? "10px" : "12px",
+                            fontSize: currentLayout.sheetMode ? "12px" : "10px",
                             fontWeight: 600,
                             color: "#1f2937",
                             wordBreak: "break-word",
@@ -1156,8 +1148,11 @@ export default function UnifiedLabelGeneratorPage() {
                         >
                           {item.code}
                         </div>
+                          </>
+                        )}
                       </div>
-                    ))}
+                    );
+                    })}
                   </div>
                 </div>
 
