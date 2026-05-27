@@ -1,3 +1,5 @@
+import { readJson, writeJson } from "./storage";
+
 export interface InventoryItem {
   id: string;
   sku: string;
@@ -36,14 +38,11 @@ const SHIPMENTS_KEY = "warehouse_inventory_shipments";
 const ADJUSTMENTS_KEY = "warehouse_inventory_adjustments";
 
 function getStoredData<T>(key: string): T[] {
-  if (typeof window === "undefined") return [];
-  const stored = localStorage.getItem(key);
-  return stored ? JSON.parse(stored) : [];
+  return readJson<T[]>(key, []);
 }
 
 function saveStoredData<T>(key: string, data: T[]): void {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(key, JSON.stringify(data));
+  writeJson(key, data);
 }
 
 export function initializeInventory(): void {

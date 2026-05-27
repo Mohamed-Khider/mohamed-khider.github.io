@@ -1,3 +1,5 @@
+import { readJson, removeStorageItem, writeJson } from "./storage";
+
 export type PrintHistoryType = "pallet" | "section" | "other";
 
 export interface PrintHistoryEntry {
@@ -19,15 +21,12 @@ export function initializePrintHistory(): void {
 
   const existing = localStorage.getItem(HISTORY_KEY);
   if (!existing) {
-    localStorage.setItem(HISTORY_KEY, JSON.stringify([]));
+    writeJson(HISTORY_KEY, []);
   }
 }
 
 export function getPrintHistory(): PrintHistoryEntry[] {
-  if (typeof window === "undefined") return [];
-
-  const stored = localStorage.getItem(HISTORY_KEY);
-  return stored ? JSON.parse(stored) : [];
+  return readJson<PrintHistoryEntry[]>(HISTORY_KEY, []);
 }
 
 export function addPrintHistory(entry: Omit<PrintHistoryEntry, "id" | "createdAt">): PrintHistoryEntry {
@@ -38,13 +37,12 @@ export function addPrintHistory(entry: Omit<PrintHistoryEntry, "id" | "createdAt
     createdAt: new Date().toISOString(),
   };
   const updatedHistory = [newEntry, ...history].slice(0, 50);
-  localStorage.setItem(HISTORY_KEY, JSON.stringify(updatedHistory));
+  writeJson(HISTORY_KEY, updatedHistory);
   return newEntry;
 }
 
 export function clearPrintHistory(): void {
-  if (typeof window === "undefined") return;
-  localStorage.removeItem(HISTORY_KEY);
+  removeStorageItem(HISTORY_KEY);
 }
 
 export function getPrintHistoryByType(type: PrintHistoryType): PrintHistoryEntry[] {

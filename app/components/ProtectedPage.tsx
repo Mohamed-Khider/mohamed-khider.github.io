@@ -3,6 +3,7 @@
 import { useEffect, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { getCurrentUser, setCurrentUser } from "../lib/userManagement";
+import AppShell from "./AppShell";
 
 interface ProtectedPageProps {
   children: ReactNode;
@@ -24,6 +25,11 @@ export default function ProtectedPage({ children, requireAdmin = false }: Protec
       return;
     }
 
+    if (currentUser.mustChangePassword) {
+      router.replace("/");
+      return;
+    }
+
     if (requireAdmin && currentUser.role !== 'admin') {
       router.replace("/main");
       return;
@@ -33,5 +39,5 @@ export default function ProtectedPage({ children, requireAdmin = false }: Protec
     setCurrentUser(currentUser);
   }, [router, requireAdmin]);
 
-  return <>{children}</>;
+  return <AppShell>{children}</AppShell>;
 }

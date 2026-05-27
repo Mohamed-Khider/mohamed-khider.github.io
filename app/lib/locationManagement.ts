@@ -1,3 +1,5 @@
+import { readJson, writeJson } from "./storage";
+
 export interface WarehouseLocation {
   id: string;
   name: string;
@@ -50,14 +52,11 @@ const DEFAULT_LOCATIONS: WarehouseLocation[] = [
 ];
 
 function getLocationsFromStorage(): WarehouseLocation[] {
-  if (typeof window === "undefined") return [];
-  const stored = localStorage.getItem(LOCATIONS_KEY);
-  return stored ? JSON.parse(stored) : [];
+  return readJson<WarehouseLocation[]>(LOCATIONS_KEY, []);
 }
 
 function saveLocations(locations: WarehouseLocation[]): void {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(LOCATIONS_KEY, JSON.stringify(locations));
+  writeJson(LOCATIONS_KEY, locations);
 }
 
 export function initializeLocations(): void {

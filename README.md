@@ -11,6 +11,21 @@ A modern Next.js application for generating and printing warehouse barcode label
 - **Direct Printer Integration**: Send ZPL directly to Zebra printers via network
 - **PDF Export**: Download generated labels as PDF
 - **Print Preview**: Browser-based print functionality
+- **Warehouse Operations**: Receiving, stock movement, shipments, locations, cycle count, packing, reports, users, and local backup/restore
+- **Hardened Local Auth**: Salted password hashing, password policy, session expiry, failed-login lockout, and default-password change enforcement
+
+## Production Readiness
+
+This app is ready as a browser-based single-site warehouse tool with local data backup. For secure multi-user production, add a backend database, server-side authentication, audit logs, and server-backed printer integration.
+
+See [PRODUCTION_READINESS.md](./PRODUCTION_READINESS.md) for the exact checklist.
+
+New local installs create a default administrator:
+
+- Username: `admin`
+- Password: `Admin@123456`
+
+The app requires this password to be changed before entering protected warehouse pages.
 
 ## Tech Stack
 
@@ -40,6 +55,11 @@ A modern Next.js application for generating and printing warehouse barcode label
    ```
 
 4. Open [http://localhost:3000](http://localhost:3000) in your browser.
+
+5. Validate before deployment:
+   ```bash
+   npm run validate
+   ```
 
 ## Deployment to GitHub Pages
 

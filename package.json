@@ -5,9 +5,10 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "export": "next export",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit --pretty false",
+    "validate": "npm run typecheck && npm run build"
   },
   "dependencies": {
     "html2canvas": "^1.4.1",

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { getCurrentUser, logoutUser } from "../lib/userManagement";
+import { getCurrentUser } from "../lib/userManagement";
 
 interface PageHeaderProps {
   title: string;
@@ -21,11 +21,6 @@ export default function PageHeader({
 
   const handleBack = () => {
     router.back();
-  };
-
-  const handleLogout = () => {
-    logoutUser();
-    router.push("/");
   };
 
   return (
@@ -64,11 +59,7 @@ export default function PageHeader({
           </div>
         </div>
       </div>
-      {showLogout && (
-        <button className="second-button" onClick={handleLogout} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          Logout
-        </button>
-      )}
+      {showLogout && <span className="page-header-spacer" />}
     </div>
   );
 }

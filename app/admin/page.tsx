@@ -8,12 +8,18 @@ import {
   getAllUsers,
   createUser,
   updateUser,
+  setUserPassword,
   deleteUser,
   getCurrentUser,
   setCurrentUser,
   User,
   UserRole
 } from "../lib/userManagement";
+import {
+  exportWarehouseBackup,
+  importWarehouseBackup,
+  type WarehouseDataBackup,
+} from "../lib/storage";
 
 export default function AdminPage() {
   const [users, setUsers] = useState<User[]>([]);
@@ -26,6 +32,7 @@ export default function AdminPage() {
     permissions: [] as string[]
   });
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
   const router = useRouter();
 
   useEffect(() => {
@@ -43,9 +50,10 @@ export default function AdminPage() {
     setUsers(allUsers);
   };
 
-  const handleCreateUser = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleCreateUser = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError("");
+    setSuccess("");
 
     const username = formData.username.trim();
     if (username.length < 3) {
@@ -53,35 +61,27 @@ export default function AdminPage() {
       return;
     }
 
-    if (formData.password.length < 6) {
-      setError("Password must be at least 6 characters long");
-      return;
-    }
-
     try {
-      createUser(username, formData.password, formData.role, formData.permissions);
+      await createUser(username, formData.password, formData.role, formData.permissions);
       loadUsers();
       setShowCreateForm(false);
       resetForm();
+      setSuccess(`User ${username} created.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create user");
     }
   };
 
-  const handleUpdateUser = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError("");
+    setSuccess("");
 
     if (!editingUser) return;
 
     const username = formData.username.trim();
     if (username.length < 3) {
       setError("Username must be at least 3 characters long");
-      return;
-    }
-
-    if (formData.password && formData.password.length < 6) {
-      setError("Password must be at least 6 characters long");
       return;
     }
 
@@ -97,11 +97,16 @@ export default function AdminPage() {
         username,
         role: formData.role,
         permissions: formData.permissions,
-        ...(formData.password && { password: formData.password })
       });
 
       if (!changed) {
         throw new Error("User update failed");
+      }
+
+      if (formData.password) {
+        await setUserPassword(editingUser.id, formData.password, {
+          mustChangePassword: false,
+        });
       }
 
       if (getCurrentUser()?.id === editingUser.id) {
@@ -110,13 +115,13 @@ export default function AdminPage() {
           username,
           role: formData.role,
           permissions: formData.permissions,
-          ...(formData.password ? { password: formData.password } : {})
         });
       }
 
       loadUsers();
       setEditingUser(null);
       resetForm();
+      setSuccess(`User ${username} updated.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update user");
     }
@@ -127,9 +132,45 @@ export default function AdminPage() {
       try {
         deleteUser(userId);
         loadUsers();
+        setSuccess("User deleted.");
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to delete user");
       }
+    }
+  };
+
+  const handleExportBackup = () => {
+    setError("");
+    setSuccess("");
+
+    const backup = exportWarehouseBackup();
+    const blob = new Blob([JSON.stringify(backup, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `warehouse-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+    setSuccess("Warehouse backup exported.");
+  };
+
+  const handleImportBackup = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    setError("");
+    setSuccess("");
+
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    try {
+      const backup = JSON.parse(await file.text()) as WarehouseDataBackup;
+      importWarehouseBackup(backup);
+      loadUsers();
+      setSuccess("Warehouse backup imported. Refresh open warehouse pages to reload data.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to import backup.");
     }
   };
 
@@ -191,6 +232,40 @@ export default function AdminPage() {
           </div>
         )}
 
+        {success && (
+          <div style={{
+            backgroundColor: "#ecfdf5",
+            color: "#047857",
+            padding: "12px",
+            borderRadius: "8px",
+            marginBottom: "20px",
+            border: "1px solid #a7f3d0"
+          }}>
+            {success}
+          </div>
+        )}
+
+        <div className="card" style={{ marginBottom: "20px" }}>
+          <h3>Warehouse Data Backup</h3>
+          <p style={{ color: "#4b5563", marginTop: 0 }}>
+            Export or restore local warehouse data, including users, inventory, locations, printer profiles, and packing records.
+          </p>
+          <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
+            <button className="primary-button" type="button" onClick={handleExportBackup}>
+              Export Backup
+            </button>
+            <label className="second-button" style={{ cursor: "pointer", display: "inline-flex", alignItems: "center" }}>
+              Import Backup
+              <input
+                type="file"
+                accept="application/json,.json"
+                onChange={handleImportBackup}
+                style={{ display: "none" }}
+              />
+            </label>
+          </div>
+        </div>
+
         {(showCreateForm || editingUser) && (
           <div className="card" style={{ marginBottom: "20px" }}>
             <h3>{editingUser ? "Edit User" : "Create New User"}</h3>
@@ -217,6 +292,9 @@ export default function AdminPage() {
                   onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                   required={!editingUser}
                 />
+                <p style={{ color: "#6b7280", fontSize: "12px", marginTop: "6px" }}>
+                  Minimum 10 characters with uppercase, lowercase, number, and symbol.
+                </p>
               </div>
 
               <div className="form-field">

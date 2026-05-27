@@ -4,6 +4,7 @@
  */
 
 import * as XLSX from "xlsx";
+import { readJson, writeJson } from "./storage";
 
 export type BoxIdType = "number" | "generated";
 export type PackType = "pack_unit" | "pack_l1";
@@ -419,8 +420,8 @@ export function validatePackingComplete(order: PackingOrder): {
 export function savePackingRecord(record: PackingRecord): void {
   try {
     const records = getPackingRecords();
-    records.push(record);
-    localStorage.setItem("packing_records", JSON.stringify(records));
+    const filteredRecords = records.filter((item) => item.orderId !== record.orderId);
+    writeJson("packing_records", [record, ...filteredRecords]);
   } catch (error) {
     console.error("Error saving packing record:", error);
   }
@@ -431,8 +432,7 @@ export function savePackingRecord(record: PackingRecord): void {
  */
 export function getPackingRecords(): PackingRecord[] {
   try {
-    const data = localStorage.getItem("packing_records");
-    return data ? JSON.parse(data) : [];
+    return readJson<PackingRecord[]>("packing_records", []);
   } catch (error) {
     console.error("Error retrieving packing records:", error);
     return [];
@@ -454,7 +454,7 @@ export function deletePackingRecord(orderId: string): void {
   try {
     const records = getPackingRecords();
     const filtered = records.filter((r) => r.orderId !== orderId);
-    localStorage.setItem("packing_records", JSON.stringify(filtered));
+    writeJson("packing_records", filtered);
   } catch (error) {
     console.error("Error deleting packing record:", error);
   }

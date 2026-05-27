@@ -18,27 +18,43 @@ export default function LoginPage() {
   const router = useRouter();
 
   useEffect(() => {
-    initializeUsers();
+    const loadAuth = async () => {
+      await initializeUsers();
 
-    const currentUser = getCurrentUser();
-    if (currentUser) {
-      router.replace("/main");
-    }
+      const currentUser = getCurrentUser();
+      if (currentUser && !currentUser.mustChangePassword) {
+        router.replace("/main");
+      }
+    };
+
+    loadAuth();
   }, [router]);
 
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError("");
 
-    const user = authenticateUser(username, password);
-    if (user) {
-      router.push("/main");
-    } else {
-      setError("Invalid username or password");
+    try {
+      const user = await authenticateUser(username, password);
+      if (user?.mustChangePassword) {
+        setResetUsername(user.username);
+        setCurrentPassword(password);
+        setShowResetPassword(true);
+        setError("You must change the default or temporary password before continuing.");
+        return;
+      }
+
+      if (user) {
+        router.push("/main");
+      } else {
+        setError("Invalid username or password");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to sign in.");
     }
   };
 
-  const handlePasswordReset = (event: React.FormEvent<HTMLFormElement>) => {
+  const handlePasswordReset = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError("");
 
@@ -52,14 +68,14 @@ export default function LoginPage() {
       return;
     }
 
-    if (newPassword.length < 6) {
-      setError("Password must be at least 6 characters long.");
-      return;
-    }
-
-    const success = changePassword(resetUsername.trim(), currentPassword, newPassword);
-    if (!success) {
-      setError("Current password is incorrect or user does not exist.");
+    try {
+      const success = await changePassword(resetUsername.trim(), currentPassword, newPassword);
+      if (!success) {
+        setError("Current password is incorrect or user does not exist.");
+        return;
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to update password.");
       return;
     }
 
@@ -175,6 +191,9 @@ export default function LoginPage() {
                   placeholder="Enter new password"
                   required
                 />
+                <p style={{ color: "#6b7280", fontSize: "12px", marginTop: "6px" }}>
+                  Use at least 10 characters with uppercase, lowercase, number, and symbol.
+                </p>
               </div>
 
               <div className="form-field">

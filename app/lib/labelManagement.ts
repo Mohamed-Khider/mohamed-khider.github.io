@@ -1,3 +1,5 @@
+import { readJson, writeJson } from "./storage";
+
 export type LabelTemplateType = "single" | "pallet" | "section";
 export type LabelSizeType =
   | "1x3"
@@ -117,14 +119,11 @@ function calculateBarcodeWidth(value: string, moduleWidth: number) {
 }
 
 function getProfilesFromStorage(): PrinterProfile[] {
-  if (typeof window === "undefined") return [];
-  const stored = localStorage.getItem(PRINTER_PROFILES_KEY);
-  return stored ? JSON.parse(stored) : [];
+  return readJson<PrinterProfile[]>(PRINTER_PROFILES_KEY, []);
 }
 
 function saveProfiles(profiles: PrinterProfile[]): void {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(PRINTER_PROFILES_KEY, JSON.stringify(profiles));
+  writeJson(PRINTER_PROFILES_KEY, profiles);
 }
 
 export function initializePrinterProfiles(): void {

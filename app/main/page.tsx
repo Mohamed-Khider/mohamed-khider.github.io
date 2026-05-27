@@ -1,122 +1,230 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import ProtectedPage from "../components/ProtectedPage";
-import { getCurrentUser, logoutUser } from "../lib/userManagement";
+import {
+  getAdjustmentHistory,
+  getInventoryItems,
+  getMovementHistory,
+  getReceiptHistory,
+  getShipmentHistory,
+  getStockSummary,
+  initializeInventory,
+  type InventoryItem,
+} from "../lib/inventoryManagement";
+import { getAllLocations, initializeLocations } from "../lib/locationManagement";
+import { getPackingRecords } from "../lib/packingManagement";
+import { getCurrentUser } from "../lib/userManagement";
+
+interface ActivityItem {
+  label: string;
+  detail: string;
+  when: string;
+  icon: string;
+}
+
+const quickActions = [
+  { href: "/receive", label: "Receive goods", icon: "inventory_2", description: "Inbound dock intake" },
+  { href: "/stock-movement", label: "Move stock", icon: "swap_horiz", description: "Transfer locations" },
+  { href: "/packing", label: "Pack order", icon: "inventory", description: "Scan and box items" },
+  { href: "/labels", label: "Print labels", icon: "label", description: "Zebra-ready output" },
+];
+
+const modules = [
+  { href: "/locations", label: "Locations", icon: "location_on", tone: "green" },
+  { href: "/shipments", label: "Shipments", icon: "local_shipping", tone: "blue" },
+  { href: "/cycle-count", label: "Cycle Count", icon: "fact_check", tone: "amber" },
+  { href: "/reports", label: "Reports", icon: "monitoring", tone: "slate" },
+  { href: "/printer-settings", label: "Printers", icon: "print", tone: "blue" },
+  { href: "/admin", label: "Admin", icon: "admin_panel_settings", tone: "amber" },
+];
 
 export default function MainPage() {
   const router = useRouter();
   const currentUser = getCurrentUser();
+  const [items, setItems] = useState<InventoryItem[]>([]);
+  const [locationCount, setLocationCount] = useState(0);
+  const [activity, setActivity] = useState<ActivityItem[]>([]);
+  const [packingCount, setPackingCount] = useState(0);
 
-  const handleLogout = () => {
-    logoutUser();
-    router.push("/");
-  };
+  useEffect(() => {
+    initializeInventory();
+    initializeLocations();
+
+    const inventoryItems = getInventoryItems();
+    const receipts = getReceiptHistory().map((item) => ({
+      label: "Receipt",
+      detail: `${item.quantity} ${item.unit} of ${item.sku}`,
+      when: item.receivedAt,
+      icon: "call_received",
+    }));
+    const movements = getMovementHistory().map((item) => ({
+      label: "Movement",
+      detail: `${item.sku}: ${item.fromLocationId ?? "Unassigned"} to ${item.toLocationId ?? "Unassigned"}`,
+      when: item.movedAt,
+      icon: "swap_horiz",
+    }));
+    const shipments = getShipmentHistory().map((item) => ({
+      label: "Shipment",
+      detail: `${item.orderNumber} to ${item.destination}`,
+      when: item.shippedAt,
+      icon: "local_shipping",
+    }));
+    const adjustments = getAdjustmentHistory().map((item) => ({
+      label: "Adjustment",
+      detail: `${item.sku}: ${item.previousQuantity} to ${item.newQuantity}`,
+      when: item.adjustedAt,
+      icon: "tune",
+    }));
+
+    setItems(inventoryItems);
+    setLocationCount(getAllLocations().filter((location) => location.active).length);
+    setPackingCount(getPackingRecords().length);
+    setActivity([...receipts, ...movements, ...shipments, ...adjustments].sort(
+      (a, b) => new Date(b.when).getTime() - new Date(a.when).getTime()
+    ).slice(0, 8));
+  }, []);
+
+  const stockSummary = useMemo(() => getStockSummary(), [items]);
+  const totalUnits = items.reduce((sum, item) => sum + item.quantity, 0);
+  const lowStock = items.filter((item) => item.quantity > 0 && item.quantity <= 5);
+  const unassigned = items.filter((item) => !item.locationId);
 
   return (
     <ProtectedPage>
-      <div className="container">
-        <div className="page-header">
+      <div className="container dashboard-container">
+        <section className="dashboard-hero">
           <div>
-            <h1>Warehouse Label System</h1>
-            <p>Choose a tool to generate and print labels quickly.</p>
-            {currentUser && (
-              <p style={{ fontSize: "14px", color: "#6b7280", marginTop: "4px" }}>
-                Logged in as: <strong>{currentUser.username}</strong> ({currentUser.role})
-              </p>
-            )}
+            <div className="eyebrow">Warehouse Command Center</div>
+            <h1>Good shift, {currentUser?.username ?? "operator"}.</h1>
+            <p>Track inventory, move stock, pack orders, and print Zebra-ready labels from one control surface.</p>
           </div>
-          <div style={{ display: "flex", gap: "12px" }}>
-            {currentUser?.role === 'admin' && (
-              <button className="primary-button" onClick={() => router.push("/admin")}>
-                <span className="material-icons">admin_panel_settings</span> Admin
-              </button>
-            )}
-            <button className="second-button" onClick={handleLogout}>
-              <span className="material-icons">logout</span> Logout
-            </button>
+          <div className="hero-status-panel">
+            <span className="material-symbols-outlined">verified</span>
+            <div>
+              <strong>System Ready</strong>
+              <span>Local data, backup, labels, and WMS workflows online</span>
+            </div>
           </div>
-        </div>
+        </section>
 
-        <div style={{ display: "grid", gap: 26, gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}>
-          <button className="link-card" onClick={() => router.push("/receive")} type="button">
-            <span className="material-icons">inventory_2</span>
-            <h2>Receive Goods</h2>
-            <p>Log inbound shipments and stage inventory.</p>
-          </button>
-
-          <button className="link-card" onClick={() => router.push("/locations")} type="button">
-            <span className="material-icons">location_on</span>
-            <h2>Locations</h2>
-            <p>Manage racks, zones, and storage assignments.</p>
-          </button>
-
-          <button className="link-card" onClick={() => router.push("/stock-movement")} type="button">
-            <span className="material-icons">swap_horiz</span>
-            <h2>Stock Movement</h2>
-            <p>Transfer products between locations safely.</p>
-          </button>
-
-          <button className="link-card" onClick={() => router.push("/shipments")} type="button">
-            <span className="material-icons">local_shipping</span>
-            <h2>Shipments</h2>
-            <p>Pick, pack, and dispatch outbound orders.</p>
-          </button>
-
-          <button className="link-card" onClick={() => router.push("/cycle-count")} type="button">
-            <span className="material-icons">inventory</span>
-            <h2>Cycle Count</h2>
-            <p>Adjust stock counts and resolve discrepancies.</p>
-          </button>
-
-          <button className="link-card" onClick={() => router.push("/generate-barcode")} type="button">
-            <span className="material-symbols-outlined">qr_code</span>
-            <h2>Single Barcode</h2>
-            <p>Create and print one barcode label at a time.</p>
-          </button>
-
-          <button className="link-card" onClick={() => router.push("/generate-multi-barcode")} type="button">
-            <span className="material-symbols-outlined">grid_view</span>
-            <h2>Multi Barcode</h2>
-            <p>Generate bulk barcode labels and export PDFs.</p>
-          </button>
-
-          <button className="link-card" onClick={() => router.push("/pallet")} type="button">
+        <section className="metric-grid">
+          <div className="metric-card">
             <span className="material-symbols-outlined">inventory_2</span>
-            <h2>Pallet Labels</h2>
-            <p>Generate pallet barcode sequences and ZPL output.</p>
-          </button>
+            <div>
+              <strong>{stockSummary.length}</strong>
+              <span>Active SKUs</span>
+            </div>
+          </div>
+          <div className="metric-card">
+            <span className="material-symbols-outlined">pin_drop</span>
+            <div>
+              <strong>{locationCount}</strong>
+              <span>Active locations</span>
+            </div>
+          </div>
+          <div className="metric-card">
+            <span className="material-symbols-outlined">tag</span>
+            <div>
+              <strong>{totalUnits}</strong>
+              <span>Units on hand</span>
+            </div>
+          </div>
+          <div className="metric-card alert">
+            <span className="material-symbols-outlined">priority_high</span>
+            <div>
+              <strong>{lowStock.length}</strong>
+              <span>Low stock SKUs</span>
+            </div>
+          </div>
+        </section>
 
-          <button className="link-card" onClick={() => router.push("/section")} type="button">
-            <span className="material-symbols-outlined">place</span>
-            <h2>Section Labels</h2>
-            <p>Build section labels for warehouse rack locations.</p>
-          </button>
+        <section className="dashboard-grid">
+          <div className="dashboard-panel span-2">
+            <div className="panel-heading">
+              <div>
+                <h2>Quick Actions</h2>
+                <p>Fast entry points for the floor team.</p>
+              </div>
+            </div>
+            <div className="quick-action-grid">
+              {quickActions.map((action) => (
+                <button className="quick-action" key={action.href} type="button" onClick={() => router.push(action.href)}>
+                  <span className="material-symbols-outlined">{action.icon}</span>
+                  <strong>{action.label}</strong>
+                  <small>{action.description}</small>
+                </button>
+              ))}
+            </div>
+          </div>
 
-          <button className="link-card" onClick={() => router.push("/labels")} type="button">
-            <span className="material-symbols-outlined">label</span>
-            <h2>Label Hub</h2>
-            <p>Open unified label management and printer profiles.</p>
-          </button>
+          <div className="dashboard-panel">
+            <div className="panel-heading">
+              <div>
+                <h2>Exceptions</h2>
+                <p>Items that need attention.</p>
+              </div>
+            </div>
+            <div className="exception-list">
+              <div>
+                <strong>{unassigned.length}</strong>
+                <span>Unassigned inventory lines</span>
+              </div>
+              <div>
+                <strong>{lowStock.length}</strong>
+                <span>Low-stock lines at 5 or below</span>
+              </div>
+              <div>
+                <strong>{packingCount}</strong>
+                <span>Saved packing records</span>
+              </div>
+            </div>
+          </div>
 
-          <button className="link-card" onClick={() => router.push("/printer-settings")} type="button">
-            <span className="material-symbols-outlined">settings</span>
-            <h2>Printer Settings</h2>
-            <p>Search, select, and configure your default Zebra printer profile.</p>
-          </button>
+          <div className="dashboard-panel span-2">
+            <div className="panel-heading">
+              <div>
+                <h2>Recent Activity</h2>
+                <p>Latest operational events across the warehouse.</p>
+              </div>
+              <button className="ghost-button" type="button" onClick={() => router.push("/reports")}>Open Reports</button>
+            </div>
+            <div className="activity-list">
+              {activity.length > 0 ? activity.map((item, index) => (
+                <div className="activity-row" key={`${item.label}-${item.when}-${index}`}>
+                  <span className="material-symbols-outlined">{item.icon}</span>
+                  <div>
+                    <strong>{item.label}</strong>
+                    <p>{item.detail}</p>
+                  </div>
+                  <time>{new Date(item.when).toLocaleString()}</time>
+                </div>
+              )) : (
+                <div className="empty-state">No warehouse activity yet.</div>
+              )}
+            </div>
+          </div>
 
-          <button className="link-card" onClick={() => router.push("/reports")} type="button">
-            <span className="material-symbols-outlined">insights</span>
-            <h2>Reports</h2>
-            <p>View stock, receipts, movements, and shipments.</p>
-          </button>
-
-           <button className="link-card" onClick={() => router.push("/packing")} type="button">
-            <span className="material-symbols-outlined">insights</span>
-            <h2>Pack</h2>
-            <p>pack order and generate box labels.</p>
-          </button>
-        </div>
+          <div className="dashboard-panel">
+            <div className="panel-heading">
+              <div>
+                <h2>Modules</h2>
+                <p>Open any WMS workspace.</p>
+              </div>
+            </div>
+            <div className="module-list">
+              {modules
+                .filter((module) => module.href !== "/admin" || currentUser?.role === "admin")
+                .map((module) => (
+                  <button className={`module-link ${module.tone}`} key={module.href} type="button" onClick={() => router.push(module.href)}>
+                    <span className="material-symbols-outlined">{module.icon}</span>
+                    <span>{module.label}</span>
+                  </button>
+                ))}
+            </div>
+          </div>
+        </section>
       </div>
     </ProtectedPage>
   );

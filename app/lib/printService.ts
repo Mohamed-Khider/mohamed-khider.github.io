@@ -36,6 +36,11 @@ async function sendZplViaWifi(zpl: string, printerIp?: string) {
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => null);
+    if (response.status === 404) {
+      throw new Error(
+        "Network printer API is unavailable on this static deployment. Use USB printing, browser/PDF print, or deploy the app with a server runtime for WiFi ZPL printing."
+      );
+    }
     throw new Error(errorData?.error || response.statusText);
   }
 }
