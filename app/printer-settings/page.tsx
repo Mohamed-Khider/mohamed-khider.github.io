@@ -56,22 +56,22 @@ export default function PrinterSettingsPage() {
     setMethod("wifi");
   };
 
-  async function requestDevice() {
-  try {
-    const device = await navigator.usb.requestDevice({ filters: [] });
-    console.log(device);
-  } catch (e) {
-    console.error(e);
-  }
-}
+//   async function requestDevice() {
+//   try {
+//     const device = await navigator.us.requestDevice({ filters: [] });
+//     console.log(device);
+//   } catch (e) {
+//     console.error(e);
+//   }
+// }
 
-async function getDevices() {
-  const devices = await navigator.usb.getDevices();
-  devices.forEach((device) => {
-    console.log(`Name: ${device.productName}, Serial: ${device.serialNumber}`);
-  });
-  return devices;
-}
+// async function getDevices() {
+//   const devices = await navigator.usb.getDevices();
+//   devices.forEach((device) => {
+//     console.log(`Name: ${device.productName}, Serial: ${device.serialNumber}`);
+//   });
+//   return devices;
+// }
 
 
 async function loadPrinters() {
