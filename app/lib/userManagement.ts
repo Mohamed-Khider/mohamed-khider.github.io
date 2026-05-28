@@ -34,7 +34,8 @@ const CURRENT_USER_KEY = "warehouse_current_user";
 const PASSWORD_HASH_ITERATIONS = 210000;
 const SESSION_DURATION_MS = 8 * 60 * 60 * 1000;
 const MAX_FAILED_LOGIN_ATTEMPTS = 5;
-const LOCKOUT_DURATION_MS = 15 * 60 * 1000;
+// const LOCKOUT_DURATION_MS = 15 * 60 * 1000;
+const LOCKOUT_DURATION_MS = 0
 const DEFAULT_ADMIN_PASSWORD = "Admin@123456";
 
 const ADMIN_PERMISSIONS = [
@@ -284,7 +285,7 @@ export function deleteUser(userId: string): boolean {
 }
 
 function isLocked(user: User): boolean {
-  return !!user.lockedUntil && new Date(user.lockedUntil).getTime() > Date.now();
+  return !!user.lockedUntil && new Date(user.lockedUntil).getTime() < Date.now();
 }
 
 function registerFailedLogin(userId: string): void {

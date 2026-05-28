@@ -11,6 +11,7 @@ import {
   type PrinterProfile,
   updatePrinterProfile,
 } from "../lib/labelManagement";
+ 
 
 const connectionMethods: PrinterConnectionMethod[] = ["wifi", "usb", "bluetooth"];
 
@@ -20,6 +21,7 @@ export default function PrinterSettingsPage() {
   const [name, setName] = useState("");
   const [address, setAddress] = useState("");
   const [method, setMethod] = useState<PrinterConnectionMethod>("wifi");
+  const [systemPrinters, setSystemPrinters] = useState<any[]>([]);
 
   useEffect(() => {
     initializePrinterProfiles();
@@ -53,6 +55,47 @@ export default function PrinterSettingsPage() {
     setAddress("");
     setMethod("wifi");
   };
+
+  async function requestDevice() {
+  try {
+    const device = await navigator.usb.requestDevice({ filters: [] });
+    console.log(device);
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+async function getDevices() {
+  const devices = await navigator.usb.getDevices();
+  devices.forEach((device) => {
+    console.log(`Name: ${device.productName}, Serial: ${device.serialNumber}`);
+  });
+  return devices;
+}
+
+
+async function loadPrinters() {
+  try {
+    const res = await fetch("/api/printers");
+
+    if (!res.ok) {
+      throw new Error("API failed");
+    }
+
+    const text = await res.text();
+
+    if (!text) {
+      console.warn("Empty response");
+      return;
+    }
+
+    const json = JSON.parse(text);
+
+    setSystemPrinters(json.data || []);
+  } catch (err) {
+    console.error("Failed to load printers:", err);
+  }
+}
 
   const handleSetDefault = async (profileId: string) => {
     const success = updatePrinterProfile(profileId, { default: true });
@@ -123,12 +166,56 @@ export default function PrinterSettingsPage() {
                 placeholder={method === "wifi" ? "192.168.1.100" : "Optional for USB/Bluetooth"}
               />
             </div>
+           <button
+  className="second-button"
+  onClick={loadPrinters}
+  style={{ gridColumn: "span 2" }}
+>
+  Load Installed Printers
+</button>
+
+<div className="card">
+  <h3>Detected System Printers</h3>
+
+  {systemPrinters.map((p, i) => (
+    <div key={i} style={{ padding: 10, borderBottom: "1px solid #eee" }}>
+      <strong>{p.Name}</strong>
+      <p>{p.DriverName}</p>
+
+      <button
+        onClick={async () => {
+          await fetch("http://127.0.0.1:3001/api/printers/default", {
+            method: "POST",
+            body: JSON.stringify({ name: p.Name }),
+          });
+          alert("Set as default");
+        }}
+      >
+        Set as Default
+      </button>
+
+      <button
+        onClick={async () => {
+          await fetch("http://127.0.0.1:3001/api/printers/print", {
+            method: "POST",
+            body: JSON.stringify({ name: p.Name }),
+          });
+        }}
+      >
+        Test Print
+      </button>
+    </div>
+  ))}
+</div>
           </div>
 
           <button className="primary-button" onClick={handleAddProfile} type="button" style={{ marginTop: 16 }}>
             Add Printer Profile
           </button>
+
+          
         </div>
+
 
         <div className="card">
           <h3>Saved Printer Profiles</h3>
