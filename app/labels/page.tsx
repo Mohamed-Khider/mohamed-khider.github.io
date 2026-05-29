@@ -27,7 +27,7 @@ import {
 } from "../lib/labelManagement";
 import { sendZplToPrinter } from "../lib/printService";
 import { getCurrentUser, hasPermission } from "../lib/userManagement";
-import { useToast } from "../../components/ToastProvider";
+import { useToast } from "../components/ToastProvider";
 
 
 type GenerationMode = "single" | "range" | "list" | "location";
