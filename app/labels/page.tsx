@@ -27,6 +27,8 @@ import {
 } from "../lib/labelManagement";
 import { sendZplToPrinter } from "../lib/printService";
 import { getCurrentUser, hasPermission } from "../lib/userManagement";
+import { useToast } from "../../components/ToastProvider";
+
 
 type GenerationMode = "single" | "range" | "list" | "location";
 
@@ -46,7 +48,9 @@ export default function UnifiedLabelGeneratorPage() {
   const [printerIp, setPrinterIp] = useState("");
   const [printerProfiles, setPrinterProfiles] = useState<PrinterProfile[]>([]);
   const [selectedProfileId, setSelectedProfileId] = useState<string>("");
+  const { showToast } = useToast();
 
+  
   // Single mode
   const [singleCode, setSingleCode] = useState("");
 
@@ -222,7 +226,7 @@ export default function UnifiedLabelGeneratorPage() {
       setBarcodes(generated);
       setZplOutput(buildLabelSheetZpl(generated, labelSize));
       setCurrentPreviewPageIndex(0);
-      openNotification(
+      showToast(
         "Success",
         `Generated ${generated.length} barcode(s)`,
         "success"
@@ -251,7 +255,7 @@ export default function UnifiedLabelGeneratorPage() {
   // Print handlers
   const handlePrint = async () => {
     if (barcodes.length === 0) {
-      openNotification("Nothing to Print", "Generate barcodes first", "warning");
+      showToast("Nothing to Print", "Generate barcodes first", "warning");
       return;
     }
 
@@ -260,7 +264,7 @@ export default function UnifiedLabelGeneratorPage() {
       handleOpenBrowserPrintPreview();
       openNotification("Print Preview Ready", "Use the print button in the Zebra preview window.", "success");
     } catch (err) {
-      openNotification("Print Failed", String(err), "warning");
+      showToast("Print Failed", String(err), "warning");
     } finally {
       setIsPrinting(false);
     }
