@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import ProtectedPage from "../../components/ProtectedPage";
 import PageHeader from "../../components/PageHeader";
@@ -25,6 +25,45 @@ export default function PackingPage() {
   const [packingOrder, setPackingOrder] = useState<PackingOrder | null>(null);
   const [currentBoxId, setCurrentBoxId] = useState<string | null>(null);
   const [selectedItem, setSelectedItem] = useState<PackingItem | null>(null);
+  const [highlightSku, setHighlightSku] = useState<string | null>(null);
+  const [multiSelectSkus, setMultiSelectSkus] = useState<Set<string>>(new Set());
+  const [multiSelectQty, setMultiSelectQty] = useState<Record<string, number>>({});
+  const highlightTimerRef = useRef<number | null>(null);
+  const itemsSelectRef = useRef<HTMLSelectElement | null>(null);
+  const statusListRef = useRef<HTMLDivElement | null>(null);
+  const HIGHLIGHT_MS = 2500;
+
+  useEffect(() => {
+    return () => {
+      if (highlightTimerRef.current) {
+        window.clearTimeout(highlightTimerRef.current);
+        highlightTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  // When highlightSku changes, scroll that item into view and focus the select
+  useEffect(() => {
+    if (highlightSku) {
+      // scroll status item into view
+      const el = document.getElementById(`status-item-${highlightSku}`);
+      if (el) {
+         el.scrollIntoView({ behavior: "smooth", block: "center" });
+      } else if (statusListRef.current) {
+        // fallback: scroll container to top
+         statusListRef.current.scrollTop = 0;
+      }
+
+      // focus the main select so user can quickly change qty
+      if (itemsSelectRef.current) {
+        try {
+          // itemsSelectRef.current.focus();
+        } catch (e) {
+          /* ignore */
+        }
+      }
+    }
+  }, [highlightSku]);
   const [quantityInput, setQuantityInput] = useState("");
   const [scanInput, setScanInput] = useState("");
   const { showToast } = useToast();
@@ -92,6 +131,100 @@ export default function PackingPage() {
       }
     }
     return item.quantity - totalPacked;
+  };
+
+  // Multi-select handlers
+  const toggleMultiSelect = (sku: string) => {
+    const newSet = new Set(multiSelectSkus);
+    if (newSet.has(sku)) {
+      newSet.delete(sku);
+      const newQty = { ...multiSelectQty };
+      delete newQty[sku];
+      setMultiSelectQty(newQty);
+    } else {
+      newSet.add(sku);
+      setMultiSelectQty({ ...multiSelectQty, [sku]: 1 });
+    }
+    setMultiSelectSkus(newSet);
+  };
+
+  // Pack all selected items at once
+  const handlePackAllSelected = () => {
+    if (multiSelectSkus.size === 0) {
+      showToast("Selection Empty", "Select items to pack", "warning");
+      return;
+    }
+
+    if (!packingOrder) return;
+    const currentBox = getCurrentBox();
+    if (!currentBox) {
+      showToast("Error", "No active box selected", "warning");
+      return;
+    }
+
+    setHistory([...history, { boxId: currentBox.boxId, contents: [...currentBox.contents] }]);
+    setRedoStack([]);
+
+    let packedCount = 0;
+    let errors: string[] = [];
+
+    for (const sku of Array.from(multiSelectSkus)) {
+      const qty = multiSelectQty[sku] || 1;
+      const item = packingOrder.items.find((i) => i.sku === sku);
+      if (!item) {
+        errors.push(`${sku} not found`);
+        continue;
+      }
+
+      const remaining = getRemainingQty(item);
+      if (qty > remaining) {
+        errors.push(`${sku}: only ${remaining} left`);
+        continue;
+      }
+
+      // Check if item already in current box
+      const existingIdx = currentBox.contents.findIndex((c) => c.itemSku === sku);
+      if (existingIdx >= 0) {
+        currentBox.contents[existingIdx].quantityPacked += qty;
+      } else {
+        currentBox.contents.push({
+          itemSku: item.sku,
+          itemName: item.name,
+          packType: item.packType,
+          quantityPacked: qty,
+          quantityRequired: item.quantity,
+          uom: item.uom,
+          timestamp: new Date().toISOString(),
+        });
+      }
+      currentBox.totalItems += qty;
+      packedCount++;
+    }
+
+    const updatedOrder = { ...packingOrder };
+    setPackingOrder(updatedOrder);
+    saveSessionOrder(updatedOrder);
+
+    showToast(
+      "✓ Packed",
+      `${packedCount} item(s) added${errors.length > 0 ? ` (${errors.length} skipped)` : ""}`,
+      packedCount > 0 ? "success" : "warning"
+    );
+
+    setMultiSelectSkus(new Set());
+    setMultiSelectQty({});
+  };
+
+  // Mark item status (packed, master box, backed elsewhere)
+  const markItemStatus = (sku: string, status: "packed" | "master_box" | "backed_elsewhere") => {
+    if (!packingOrder) return;
+    const updatedItems = packingOrder.items.map((item) =>
+      item.sku === sku ? { ...item, itemStatus: status } : item
+    );
+    const updatedOrder = { ...packingOrder, items: updatedItems };
+    setPackingOrder(updatedOrder);
+    saveSessionOrder(updatedOrder);
+    showToast("Status Updated", `${sku} marked as ${status.replace(/_/g, " ")}`, "success");
   };
 
   // Add item to box
@@ -295,6 +428,33 @@ export default function PackingPage() {
     setHistory([...history, { boxId: currentBox.boxId, contents: [...currentBox.contents] }]);
     setRedoStack([]);
 
+    // Move scanned item to top of the items list and highlight it for review
+    try {
+      if (packingOrder) {
+        const reordered = [
+          foundItem,
+          ...packingOrder.items.filter((i) => i.sku !== foundItem.sku),
+        ];
+        const updatedOrder = { ...packingOrder, items: reordered };
+        setPackingOrder(updatedOrder);
+        saveSessionOrder(updatedOrder);
+        setSelectedItem(foundItem);
+        // trigger highlight animation on sidebar and auto-scroll/focus
+        if (highlightTimerRef.current) {
+          window.clearTimeout(highlightTimerRef.current);
+        }
+        setHighlightSku(foundItem.sku);
+        // auto-focus select (so user can adjust qty) and scroll status into view via effect
+        // clear highlight after configured duration
+        highlightTimerRef.current = window.setTimeout(() => {
+          setHighlightSku(null);
+          highlightTimerRef.current = null;
+        }, HIGHLIGHT_MS) as unknown as number;
+      }
+    } catch (e) {
+      console.error("Failed to reorder items after scan:", e);
+    }
+
     if (existingItemIndex >= 0) {
       // Item exists - increment quantity
       const existingItem = currentBox.contents[existingItemIndex];
@@ -430,6 +590,11 @@ export default function PackingPage() {
     100
   );
 
+  // Order the status items so the selected/scanned item appears first
+  const statusItems = selectedItem
+    ? [selectedItem, ...packingOrder.items.filter((i) => i.sku !== selectedItem.sku)]
+    : packingOrder.items;
+
   return (
     <ProtectedPage>
       <style>{`
@@ -449,6 +614,16 @@ export default function PackingPage() {
           0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7); }
           70% { box-shadow: 0 0 0 8px rgba(59, 130, 246, 0); }
           100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
+        }
+        @keyframes highlightGlow {
+          0% { box-shadow: 0 0 0 0 rgba(59,130,246,0.25); transform: translateY(0); }
+          50% { box-shadow: 0 8px 30px rgba(59,130,246,0.12); transform: translateY(-2px); }
+          100% { box-shadow: 0 0 0 0 rgba(59,130,246,0); transform: translateY(0); }
+        }
+        .status-highlight {
+          animation: highlightGlow 1.6s ease-out;
+          border-left-color: #2563eb !important;
+          background: linear-gradient(90deg, rgba(239,246,255,0.9), rgba(249,250,251,0.9));
         }
         .packing-card {
           animation: slideIn 0.3s ease-out;
@@ -654,7 +829,7 @@ export default function PackingPage() {
                 </span>
               </div>
               <input
-                ref={(input) => input?.focus()}
+                // ref={(input) => input?.click()}
                 type="text"
                 placeholder="Scan barcode or type SKU... (auto-focus)"
                 value={scanInput}
@@ -880,6 +1055,7 @@ export default function PackingPage() {
                   </label>
                   <select
                     value={selectedItem?.sku || ""}
+                    ref={itemsSelectRef}
                     onChange={(e) => {
                       const item = packingOrder.items.find((i) => i.sku === e.target.value);
                       setSelectedItem(item || null);
@@ -1020,22 +1196,81 @@ export default function PackingPage() {
 
           {/* Sidebar - Right Column */}
           <div className="sidebar-right" style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+            {/* Now Packing Banner */}
+            {selectedItem && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ flex: 1 }} />
+                <div style={{ padding: '8px 12px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8 }}>
+                  <strong style={{ color: '#1e3a8a' }}>Now packing</strong>
+                  <div style={{ fontSize: 12, color: '#0f172a' }}>{selectedItem.sku} — {selectedItem.name}</div>
+                </div>
+                <button onClick={() => { setSelectedItem(null); setHighlightSku(null); }} style={{ marginLeft: 8, padding: '6px 10px', borderRadius: 8, border: 'none', background: '#f3f4f6', cursor: 'pointer' }}>Clear</button>
+              </div>
+            )}
             {/* Item Status */}
             <div className="card packing-card">
-              <h4 style={{ margin: "0 0 16px 0", fontSize: "14px", fontWeight: "700" }}>
+              <h4 style={{ margin: "0 0 12px 0", fontSize: "14px", fontWeight: "700" }}>
                 📋 Item Status
               </h4>
+              {multiSelectSkus.size > 0 && (
+                <div style={{ marginBottom: "12px", padding: "10px", backgroundColor: "#dbeafe", borderRadius: "8px", border: "1px solid #93c5fd" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                    <span style={{ fontSize: "12px", fontWeight: "600", color: "#1e40af" }}>
+                      Selected: {multiSelectSkus.size}
+                    </span>
+                    <button
+                      onClick={handlePackAllSelected}
+                      style={{
+                        padding: "6px 12px",
+                        backgroundColor: "#2563eb",
+                        color: "white",
+                        border: "none",
+                        borderRadius: "6px",
+                        cursor: "pointer",
+                        fontSize: "11px",
+                        fontWeight: "600",
+                      }}
+                    >
+                      📦 Pack All
+                    </button>
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px" }}>
+                    {Array.from(multiSelectSkus).map((sku) => (
+                      <div key={sku} style={{ display: "flex", gap: "4px", alignItems: "center" }}>
+                        <input
+                          type="number"
+                          min="1"
+                          value={multiSelectQty[sku] || 1}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value, 10) || 1;
+                            setMultiSelectQty({ ...multiSelectQty, [sku]: Math.max(1, val) });
+                          }}
+                          style={{
+                            width: "50px",
+                            padding: "4px",
+                            border: "1px solid #93c5fd",
+                            borderRadius: "4px",
+                            fontSize: "11px",
+                          }}
+                        />
+                        <span style={{ fontSize: "11px", fontWeight: "600" }}>{sku}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div
                 style={{
                   display: "flex",
                   flexDirection: "column",
                   gap: "8px",
-                  maxHeight: "450px",
+                  maxHeight: "420px",
                   overflowY: "auto",
                   paddingRight: "6px",
                 }}
+                ref={statusListRef}
               >
-                {packingOrder.items.map((item) => {
+                {statusItems.map((item) => {
                   let totalPacked = 0;
                   for (const box of packingOrder.boxes) {
                     totalPacked += box.contents
@@ -1044,48 +1279,61 @@ export default function PackingPage() {
                   }
                   const remaining = item.quantity - totalPacked;
                   const isComplete = remaining === 0;
+                  const isSelected = selectedItem?.sku === item.sku;
+                  const isMultiSelected = multiSelectSkus.has(item.sku);
+                  const status = item.itemStatus || "packed";
 
                   return (
                     <div
+                      id={`status-item-${item.sku}`}
                       key={item.sku}
+                      className={item.sku === highlightSku ? "status-highlight" : ""}
                       style={{
                         padding: "10px",
-                        backgroundColor: isComplete ? "#dcfce7" : "#f9fafb",
+                        backgroundColor: isMultiSelected ? "#dbeafe" : isSelected ? "#e6f0ff" : isComplete ? "#dcfce7" : "#f9fafb",
                         borderRadius: "8px",
-                        borderLeft: `4px solid ${isComplete ? "#10b981" : "#3b82f6"}`,
+                        borderLeft: `4px solid ${isComplete ? "#10b981" : isMultiSelected ? "#2563eb" : "#3b82f6"}`,
                       }}
                     >
-                      <p
-                        style={{
-                          margin: "0 0 4px 0",
-                          fontSize: "12px",
-                          fontWeight: "700",
-                          color: "#0f172a",
-                        }}
-                      >
-                        {item.sku}
-                      </p>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
+                        <input
+                          type="checkbox"
+                          checked={isMultiSelected}
+                          onChange={() => toggleMultiSelect(item.sku)}
+                          style={{ cursor: "pointer", width: "16px", height: "16px" }}
+                        />
+                        <div style={{ flex: 1 }}>
+                          <p style={{ margin: "0", fontSize: "12px", fontWeight: "700", color: "#0f172a" }}>
+                            {item.sku}
+                          </p>
+                          <p style={{ margin: "0", fontSize: "10px", color: "#6b7280" }}>
+                            {item.name.substring(0, 30)}
+                            {item.name.length > 30 ? "..." : ""}
+                          </p>
+                        </div>
+                      </div>
                       <div
                         style={{
                           display: "flex",
                           justifyContent: "space-between",
                           fontSize: "11px",
                           color: "#6b7280",
-                          marginBottom: "4px",
+                          marginBottom: "6px",
                         }}
                       >
                         <span>
                           {totalPacked}/{item.quantity}
                         </span>
-                        <span>{isComplete ? "✓" : `${remaining}L`}</span>
+                        <span>{isComplete ? "✓ Done" : `${remaining}L`}</span>
                       </div>
                       <div
                         style={{
                           width: "100%",
-                          height: "4px",
+                          height: "3px",
                           backgroundColor: "#e5e7eb",
                           borderRadius: "2px",
                           overflow: "hidden",
+                          marginBottom: "8px",
                         }}
                       >
                         <div
@@ -1095,6 +1343,53 @@ export default function PackingPage() {
                             backgroundColor: isComplete ? "#10b981" : "#3b82f6",
                           }}
                         />
+                      </div>
+                      <div style={{ display: "flex", gap: "4px", flexWrap: "wrap" }}>
+                        <button
+                          onClick={() => markItemStatus(item.sku, "packed")}
+                          style={{
+                            padding: "4px 8px",
+                            fontSize: "10px",
+                            backgroundColor: status === "packed" ? "#2563eb" : "#f3f4f6",
+                            color: status === "packed" ? "white" : "#6b7280",
+                            border: "none",
+                            borderRadius: "4px",
+                            cursor: "pointer",
+                            fontWeight: "600",
+                          }}
+                        >
+                          📦 Box
+                        </button>
+                        <button
+                          onClick={() => markItemStatus(item.sku, "master_box")}
+                          style={{
+                            padding: "4px 8px",
+                            fontSize: "10px",
+                            backgroundColor: status === "master_box" ? "#f59e0b" : "#f3f4f6",
+                            color: status === "master_box" ? "white" : "#6b7280",
+                            border: "none",
+                            borderRadius: "4px",
+                            cursor: "pointer",
+                            fontWeight: "600",
+                          }}
+                        >
+                          👑 Master
+                        </button>
+                        <button
+                          onClick={() => markItemStatus(item.sku, "backed_elsewhere")}
+                          style={{
+                            padding: "4px 8px",
+                            fontSize: "10px",
+                            backgroundColor: status === "backed_elsewhere" ? "#ef4444" : "#f3f4f6",
+                            color: status === "backed_elsewhere" ? "white" : "#6b7280",
+                            border: "none",
+                            borderRadius: "4px",
+                            cursor: "pointer",
+                            fontWeight: "600",
+                          }}
+                        >
+                          🔄 Elsewhere
+                        </button>
                       </div>
                     </div>
                   );

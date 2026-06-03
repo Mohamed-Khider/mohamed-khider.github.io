@@ -19,6 +19,7 @@ export interface PackingItem {
 
   // 🔥 NEW
   packedQty?: number; // runtime tracking
+  itemStatus?: "packed" | "master_box" | "backed_elsewhere"; // Status: packed in box, master box (not packed), or backed elsewhere
 
   lotBatch?: string;
   expiryDate?: string;
