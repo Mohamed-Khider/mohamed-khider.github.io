@@ -40,9 +40,19 @@ export interface BoxContent {
 
 export interface Box {
   boxId: string; // e.g., "LB-001" or "Box 1"
+  customName?: string; // user-editable name
   contents: BoxContent[];
   createdAt: string;
   completedAt?: string;
+  totalItems: number;
+  palletId?: string; // assigned pallet
+}
+
+export interface Pallet {
+  palletId: string; // e.g., "PALLET-001"
+  boxIds: string[]; // array of box IDs in this pallet
+  createdAt: string;
+  totalBoxes: number;
   totalItems: number;
 }
 
@@ -53,6 +63,7 @@ export interface PackingOrder {
   boxIdType: BoxIdType;
   items: PackingItem[];
   boxes: Box[];
+  pallets?: Pallet[]; // array of pallets
   createdAt: string;
   completedAt?: string;
   status: "in-progress" | "completed";
@@ -321,6 +332,7 @@ export function createPackingOrder(
 ): PackingOrder {
 
   const boxes: Box[] = [];
+  const pallets: Pallet[] = [];
 
   return {
     id: `packing-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -329,6 +341,7 @@ export function createPackingOrder(
     boxIdType,
     items,
     boxes,
+    pallets,
     createdAt: new Date().toISOString(),
     status: "in-progress",
   };
@@ -459,4 +472,134 @@ export function deletePackingRecord(orderId: string): void {
   } catch (error) {
     console.error("Error deleting packing record:", error);
   }
+}
+
+/**
+ * Create a new pallet and add it to the order
+ */
+export function createPallet(order: PackingOrder, boxIds: string[] = []): Pallet {
+  const palletNumber = (order.pallets?.length || 0) + 1;
+  const palletId = `PALLET-${String(palletNumber).padStart(3, "0")}`;
+
+  let totalItems = 0;
+  for (const boxId of boxIds) {
+    const box = order.boxes.find((b) => b.boxId === boxId);
+    if (box) {
+      totalItems += box.totalItems;
+      box.palletId = palletId; // assign box to pallet
+    }
+  }
+
+  const pallet: Pallet = {
+    palletId,
+    boxIds,
+    createdAt: new Date().toISOString(),
+    totalBoxes: boxIds.length,
+    totalItems,
+  };
+
+  return pallet;
+}
+
+/**
+ * Add a box to an existing pallet
+ */
+export function addBoxToPallet(
+  order: PackingOrder,
+  palletId: string,
+  boxId: string
+): Pallet | null {
+  if (!order.pallets) {
+    order.pallets = [];
+  }
+
+  const pallet = order.pallets.find((p) => p.palletId === palletId);
+  if (!pallet) return null;
+
+  if (!pallet.boxIds.includes(boxId)) {
+    const box = order.boxes.find((b) => b.boxId === boxId);
+    if (box) {
+      // remove from old pallet if assigned
+      if (box.palletId && box.palletId !== palletId) {
+        const oldPallet = order.pallets.find((p) => p.palletId === box.palletId);
+        if (oldPallet) {
+          oldPallet.boxIds = oldPallet.boxIds.filter((id) => id !== boxId);
+          oldPallet.totalBoxes = oldPallet.boxIds.length;
+          oldPallet.totalItems -= box.totalItems;
+        }
+      }
+
+      pallet.boxIds.push(boxId);
+      pallet.totalBoxes = pallet.boxIds.length;
+      pallet.totalItems += box.totalItems;
+      box.palletId = palletId;
+    }
+  }
+
+  return pallet;
+}
+
+/**
+ * Remove a box from a pallet
+ */
+export function removeBoxFromPallet(
+  order: PackingOrder,
+  palletId: string,
+  boxId: string
+): void {
+  if (!order.pallets) return;
+
+  const pallet = order.pallets.find((p) => p.palletId === palletId);
+  if (pallet) {
+    const box = order.boxes.find((b) => b.boxId === boxId);
+    if (box) {
+      pallet.boxIds = pallet.boxIds.filter((id) => id !== boxId);
+      pallet.totalBoxes = pallet.boxIds.length;
+      pallet.totalItems -= box.totalItems;
+      box.palletId = undefined;
+    }
+  }
+}
+
+/**
+ * Rename a box
+ */
+export function renameBox(order: PackingOrder, boxId: string, newName: string): void {
+  const box = order.boxes.find((b) => b.boxId === boxId);
+  if (box) {
+    box.customName = newName || undefined;
+  }
+}
+
+/**
+ * Get pallet summary statistics
+ */
+export function getPalletSummary(
+  order: PackingOrder
+): {
+  totalPallets: number;
+  boxesPerPallet: Record<string, number>;
+  itemsPerPallet: Record<string, number>;
+  unassignedBoxes: number;
+} {
+  if (!order.pallets) {
+    order.pallets = [];
+  }
+
+  const boxesPerPallet: Record<string, number> = {};
+  const itemsPerPallet: Record<string, number> = {};
+
+  for (const pallet of order.pallets) {
+    boxesPerPallet[pallet.palletId] = pallet.totalBoxes;
+    itemsPerPallet[pallet.palletId] = pallet.totalItems;
+  }
+
+  const unassignedBoxes = order.boxes.filter((b) => !b.palletId).length;
+
+  return {
+    totalPallets: order.pallets.length,
+    boxesPerPallet,
+    itemsPerPallet,
+    unassignedBoxes,
+  };
 }
