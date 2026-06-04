@@ -3,6 +3,7 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { getCurrentUser, hasPermission, logoutUser } from "../lib/userManagement";
+import PrinterManagerButton from "./PrinterManagerButton";
 
 interface AppShellProps {
   children: ReactNode;
@@ -132,6 +133,7 @@ export default function AppShell({ children }: AppShellProps) {
             <span className="status-dot" />
             <span>Local mode</span>
           </div>
+          <PrinterManagerButton />
         </header>
         <main className="app-content">{children}</main>
       </div>

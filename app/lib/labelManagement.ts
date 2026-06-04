@@ -29,7 +29,7 @@ export interface LabelSize {
   height: number;
 }
 
-export type PrinterConnectionMethod = "wifi" | "usb" | "bluetooth";
+export type PrinterConnectionMethod = "wifi" | "usb" | "bluetooth" | "system";
 
 export interface PrinterProfile {
   id: string;
@@ -45,8 +45,8 @@ const DEFAULT_PRINTER_PROFILES: PrinterProfile[] = [
   {
     id: "printer-default",
     name: "Default Zebra Printer",
-    connectionMethod: "wifi",
-    address: "192.168.1.100",
+    connectionMethod: "system",
+    address: "",
     default: true,
   },
 ];
