@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getPrinters } from "../../lib/printerService";
+import { getDefaultPrinterName, getPrinters } from "../../lib/printerService";
 
 export async function GET() {
   try {
@@ -8,6 +8,7 @@ export async function GET() {
     return NextResponse.json({
       success: true,
       data: printers ?? [],
+      defaultPrinterName: getDefaultPrinterName(),
     });
   } catch (error) {
     return NextResponse.json({

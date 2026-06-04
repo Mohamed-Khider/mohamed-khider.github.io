@@ -13,7 +13,7 @@ import {
 } from "../lib/labelManagement";
  
 
-const connectionMethods: PrinterConnectionMethod[] = ["wifi", "usb", "bluetooth"];
+const connectionMethods: PrinterConnectionMethod[] = ["system", "wifi", "usb", "bluetooth"];
 
 export default function PrinterSettingsPage() {
   const [printerProfiles, setPrinterProfiles] = useState<PrinterProfile[]>([]);
@@ -47,7 +47,7 @@ export default function PrinterSettingsPage() {
     const newProfile = addPrinterProfile({
       name: name.trim(),
       connectionMethod: method,
-      address: address.trim(),
+      address: method === "system" ? address.trim() || name.trim() : address.trim(),
       default: false,
     });
     setPrinterProfiles((current) => [...current, newProfile]);
@@ -163,7 +163,7 @@ async function loadPrinters() {
                 type="text"
                 value={address}
                 onChange={(e) => setAddress(e.target.value)}
-                placeholder={method === "wifi" ? "192.168.1.100" : "Optional for USB/Bluetooth"}
+                placeholder={method === "wifi" ? "192.168.1.100" : "Windows printer name or optional device address"}
               />
             </div>
            <button
@@ -184,8 +184,9 @@ async function loadPrinters() {
 
       <button
         onClick={async () => {
-          await fetch("http://127.0.0.1:3001/api/printers/default", {
+          await fetch("/api/printers/default", {
             method: "POST",
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ name: p.Name }),
           });
           alert("Set as default");
@@ -196,8 +197,9 @@ async function loadPrinters() {
 
       <button
         onClick={async () => {
-          await fetch("http://127.0.0.1:3001/api/printers/print", {
+          await fetch("/api/printers/print", {
             method: "POST",
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ name: p.Name }),
           });
         }}

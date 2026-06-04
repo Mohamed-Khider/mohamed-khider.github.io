@@ -1,8 +1,11 @@
-export type ConnectionMethod = "wifi" | "usb" | "bluetooth";
+import { getDefaultPrinterProfile } from "./labelManagement";
+
+export type ConnectionMethod = "wifi" | "usb" | "bluetooth" | "system";
 
 export interface PrinterConnectionOptions {
   method?: ConnectionMethod;
   address?: string;
+  printerName?: string;
 }
 
 export async function sendZplToPrinter(
@@ -12,9 +15,14 @@ export async function sendZplToPrinter(
   const connectionOptions: PrinterConnectionOptions =
     typeof connection === "string"
       ? { method: "wifi", address: connection }
-      : connection || { method: "wifi" };
+      : connection || getDefaultPrinterConnection();
 
   switch (connectionOptions.method) {
+    case "system":
+      return sendZplViaSystemPrinter(
+        zpl,
+        connectionOptions.printerName || connectionOptions.address
+      );
     case "usb":
       return sendZplViaUsb(zpl);
     case "bluetooth":
@@ -22,6 +30,44 @@ export async function sendZplToPrinter(
     case "wifi":
     default:
       return sendZplViaWifi(zpl, connectionOptions.address);
+  }
+}
+
+function getDefaultPrinterConnection(): PrinterConnectionOptions {
+  const defaultProfile = getDefaultPrinterProfile();
+  if (!defaultProfile) return { method: "wifi" };
+
+  return {
+    method: defaultProfile.connectionMethod,
+    address: defaultProfile.address,
+    printerName: defaultProfile.address || defaultProfile.name,
+  };
+}
+
+async function sendZplViaSystemPrinter(zpl: string, printerName?: string) {
+  const payload = { zpl, printerName };
+  const localServiceUrl = "http://127.0.0.1:3001/api/printers/zpl";
+
+  const localResponse = await fetch(localServiceUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  }).catch(() => null);
+
+  if (localResponse?.ok) return;
+
+  const response = await fetch("/api/printers/zpl", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => null);
+    throw new Error(
+      errorData?.error ||
+        "Unable to send ZPL to the selected Windows printer."
+    );
   }
 }
 
