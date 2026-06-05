@@ -7,6 +7,8 @@ import { jsPDF } from "jspdf";
 import ProtectedPage from "../components/ProtectedPage";
 import NotificationModal from "../components/NotificationModal";
 import PageHeader from "../components/PageHeader";
+import { sendZplToPrinter } from "../lib/printService";
+import { getCurrentUser, hasPermission } from "../lib/userManagement";
 
 export default function GenerateMultiBarcodePage() {
   const [input, setInput] = useState("");
@@ -14,6 +16,8 @@ export default function GenerateMultiBarcodePage() {
   const [isPrinting, setIsPrinting] = useState(false);
   const [notification, setNotification] = useState<{ title: string; message: string; type: "warning" | "success" | "info" } | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const currentUser = getCurrentUser();
+  const canPrint = hasPermission(currentUser, "print_labels");
 
   const handleGenerate = () => {
     const values = input
@@ -80,11 +84,15 @@ export default function GenerateMultiBarcodePage() {
       return;
     }
 
+    if (!canPrint) {
+      openNotification("Permission Required", "Your account does not have permission to print labels.", "warning");
+      return;
+    }
+
     setIsPrinting(true);
 
     try {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      window.print();
+      await sendZplToPrinter(multiZplText);
       openNotification("Printed Successfully", "Your barcode labels were sent to the printer.", "success");
     } catch (error) {
       openNotification("Print Failed", String(error), "warning");
@@ -123,7 +131,7 @@ export default function GenerateMultiBarcodePage() {
             <button className="primary-button" type="button" onClick={handleGenerate}>
               Generate
             </button>
-            <button className="second-button" type="button" onClick={handlePrint} disabled={!codes.length || isPrinting}>
+            <button className="second-button" type="button" onClick={handlePrint} disabled={!codes.length || isPrinting || !canPrint}>
               {isPrinting ? "Printing..." : "Print"}
             </button>
             <button className="copy-button" type="button" onClick={handleCopyZpl} disabled={!codes.length}>

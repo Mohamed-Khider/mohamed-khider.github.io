@@ -79,8 +79,7 @@ export default function PalletPage() {
     setIsPrinting(true);
 
     try {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      window.print();
+      await sendZplToPrinter(zplText);
       addPrintHistory({
         type: "pallet",
         title: "Pallet labels printed",
@@ -199,7 +198,7 @@ export default function PalletPage() {
               Generate
             </button>
             <button className="second-button" type="button" onClick={handlePrint} disabled={!codes.length || isPrinting}>
-              {isPrinting ? "Printing..." : "Print Preview"}
+              {isPrinting ? "Printing..." : "Print"}
             </button>
             <button className="copy-button" type="button" onClick={handleCopyZpl} disabled={!codes.length}>
               Copy ZPL

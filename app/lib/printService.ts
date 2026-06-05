@@ -1,4 +1,5 @@
 import { getDefaultPrinterProfile } from "./labelManagement";
+import { fetchLocalFirst } from "./localPrintBridge";
 
 export type ConnectionMethod = "wifi" | "usb" | "bluetooth" | "system";
 
@@ -46,17 +47,8 @@ function getDefaultPrinterConnection(): PrinterConnectionOptions {
 
 async function sendZplViaSystemPrinter(zpl: string, printerName?: string) {
   const payload = { zpl, printerName };
-  const localServiceUrl = "http://127.0.0.1:3001/api/printers/zpl";
 
-  const localResponse = await fetch(localServiceUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  }).catch(() => null);
-
-  if (localResponse?.ok) return;
-
-  const response = await fetch("/api/printers/zpl", {
+  const response = await fetchLocalFirst("/api/printers/zpl", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),

@@ -9,6 +9,7 @@ import {
   type PrinterProfile,
   updatePrinterProfile,
 } from "../lib/labelManagement";
+import { fetchLocalFirst, fetchLocalPrintService } from "../lib/localPrintBridge";
 
 interface SystemPrinter {
   Name: string;
@@ -24,6 +25,7 @@ export default function PrinterManagerButton() {
   const [profiles, setProfiles] = useState<PrinterProfile[]>([]);
   const [systemPrinters, setSystemPrinters] = useState<SystemPrinter[]>([]);
   const [defaultSystemPrinter, setDefaultSystemPrinter] = useState("");
+  const [serviceRunning, setServiceRunning] = useState(false);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
 
@@ -40,12 +42,19 @@ export default function PrinterManagerButton() {
   const displayName =
     defaultProfile?.address || defaultProfile?.name || defaultSystemPrinter || "Printer";
 
+  async function checkServiceStatus() {
+    const response = await fetchLocalPrintService("/health");
+    const running = Boolean(response?.ok);
+    setServiceRunning(running);
+    return running;
+  }
+
   async function loadPrinters() {
     setLoading(true);
     setMessage("");
 
     try {
-      const response = await fetch("/api/printers");
+      const response = await fetchLocalFirst("/api/printers");
       const json = await response.json();
 
       if (!response.ok || !json.success) {
@@ -54,6 +63,7 @@ export default function PrinterManagerButton() {
 
       setSystemPrinters(json.data || []);
       setDefaultSystemPrinter(json.defaultPrinterName || "");
+      await checkServiceStatus();
     } catch (error) {
       setMessage(String(error));
     } finally {
@@ -66,7 +76,7 @@ export default function PrinterManagerButton() {
     setMessage("");
 
     try {
-      const response = await fetch("/api/printers/default", {
+      const response = await fetchLocalFirst("/api/printers/default", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: printerName }),
@@ -102,6 +112,30 @@ export default function PrinterManagerButton() {
     }
   }
 
+  async function requestServiceInstall() {
+    setLoading(true);
+    setMessage("");
+
+    try {
+      const response = await fetch("/api/local-print-service/install", {
+        method: "POST",
+      });
+      const json = await response.json();
+
+      if (!response.ok || !json.success) {
+        throw new Error(json.error || "Unable to request Windows service installation.");
+      }
+
+      setMessage(json.message || "Approve the Windows prompt to install the print service.");
+    } catch (error) {
+      setMessage(
+        `${String(error)} Run npm run print-service:install from this project to install it manually.`
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function requestUsbAccess() {
     setMessage("");
 
@@ -125,6 +159,10 @@ export default function PrinterManagerButton() {
     if (open && systemPrinters.length === 0 && !loading) {
       loadPrinters();
     }
+
+    if (open) {
+      checkServiceStatus();
+    }
   }, [open]);
 
   return (
@@ -145,7 +183,11 @@ export default function PrinterManagerButton() {
           <div className="printer-popover-header">
             <div>
               <strong>Printer Management</strong>
-              <span>{defaultProfile ? `Default: ${displayName}` : "No default selected"}</span>
+              <span>
+                {serviceRunning ? "Local service running" : "Local service not running"}
+                {" | "}
+                {defaultProfile ? `Default: ${displayName}` : "No default selected"}
+              </span>
             </div>
             <button type="button" onClick={() => setOpen(false)} aria-label="Close printer management">
               <span className="material-symbols-outlined">close</span>
@@ -160,6 +202,10 @@ export default function PrinterManagerButton() {
             <button className="ghost-button" type="button" onClick={requestUsbAccess}>
               <span className="material-symbols-outlined">usb</span>
               USB Access
+            </button>
+            <button className="ghost-button" type="button" onClick={requestServiceInstall} disabled={loading || serviceRunning}>
+              <span className="material-symbols-outlined">admin_panel_settings</span>
+              Service
             </button>
           </div>
 
