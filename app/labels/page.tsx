@@ -27,6 +27,8 @@ import {
 } from "../lib/labelManagement";
 import { sendZplToPrinter } from "../lib/printService";
 import { getCurrentUser, hasPermission } from "../lib/userManagement";
+import { useToast } from "../components/ToastProvider";
+
 
 type GenerationMode = "single" | "range" | "list" | "location";
 
@@ -46,7 +48,9 @@ export default function UnifiedLabelGeneratorPage() {
   const [printerIp, setPrinterIp] = useState("");
   const [printerProfiles, setPrinterProfiles] = useState<PrinterProfile[]>([]);
   const [selectedProfileId, setSelectedProfileId] = useState<string>("");
+  const { showToast } = useToast();
 
+  
   // Single mode
   const [singleCode, setSingleCode] = useState("");
 
@@ -222,7 +226,7 @@ export default function UnifiedLabelGeneratorPage() {
       setBarcodes(generated);
       setZplOutput(buildLabelSheetZpl(generated, labelSize));
       setCurrentPreviewPageIndex(0);
-      openNotification(
+      showToast(
         "Success",
         `Generated ${generated.length} barcode(s)`,
         "success"
@@ -251,16 +255,21 @@ export default function UnifiedLabelGeneratorPage() {
   // Print handlers
   const handlePrint = async () => {
     if (barcodes.length === 0) {
-      openNotification("Nothing to Print", "Generate barcodes first", "warning");
+      showToast("Nothing to Print", "Generate barcodes first", "warning");
+      return;
+    }
+
+    if (!canPrint) {
+      openNotification("Permission Denied", "You don't have printer access", "warning");
       return;
     }
 
     setIsPrinting(true);
     try {
-      handleOpenBrowserPrintPreview();
-      openNotification("Print Preview Ready", "Use the print button in the Zebra preview window.", "success");
+      await sendZplToPrinter(zplOutput);
+      openNotification("Printed", "Labels were sent to the default Zebra printer.", "success");
     } catch (err) {
-      openNotification("Print Failed", String(err), "warning");
+      showToast("Print Failed", String(err), "warning");
     } finally {
       setIsPrinting(false);
     }
@@ -272,27 +281,14 @@ export default function UnifiedLabelGeneratorPage() {
       return;
     }
 
+    if (!canPrint) {
+      openNotification("Permission Denied", "You don't have printer access", "warning");
+      return;
+    }
+
     try {
-      const printWindow = window.open("", "_blank");
-      if (!printWindow) {
-        throw new Error("Unable to open ZPL print window.");
-      }
-
-      const escapeHtml = (text: string) =>
-        text
-          .replace(/&/g, "&amp;")
-          .replace(/</g, "&lt;")
-          .replace(/>/g, "&gt;")
-          .replace(/\"/g, "&quot;")
-          .replace(/'/g, "&#39;");
-
-      printWindow.document.write(`<!DOCTYPE html><html><head><title>Print ZPL</title><style>
-        body { margin: 20px; font-family: monospace; white-space: pre-wrap; font-size: 12px; }
-        pre { word-break: break-word; }
-      </style></head><body><pre>${escapeHtml(zplOutput)}</pre></body></html>`);
-      printWindow.document.close();
-      printWindow.focus();
-      printWindow.print();
+      await sendZplToPrinter(zplOutput);
+      openNotification("Printed", "ZPL was sent to the default Zebra printer.", "success");
     } catch (err) {
       openNotification("ZPL Print Failed", String(err), "warning");
     }
@@ -612,7 +608,7 @@ export default function UnifiedLabelGeneratorPage() {
           address: selectedProfile.address,
         });
       } else {
-        await sendZplToPrinter(zplOutput, printerIp || undefined);
+        await sendZplToPrinter(zplOutput);
       }
       openNotification("Sent to Zebra", "Labels printing", "success");
     } catch (err) {

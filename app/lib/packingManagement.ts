@@ -40,9 +40,20 @@ export interface BoxContent {
 
 export interface Box {
   boxId: string; // e.g., "LB-001" or "Box 1"
+  customName?: string; // user-editable name
   contents: BoxContent[];
   createdAt: string;
   completedAt?: string;
+  totalItems: number;
+  palletId?: string; // assigned pallet
+}
+
+export interface Pallet {
+  palletId: string; // e.g., "PALLET-001"
+  customName?: string; // user-editable name
+  boxIds: string[]; // array of box IDs in this pallet
+  createdAt: string;
+  totalBoxes: number;
   totalItems: number;
 }
 
@@ -53,6 +64,7 @@ export interface PackingOrder {
   boxIdType: BoxIdType;
   items: PackingItem[];
   boxes: Box[];
+  pallets?: Pallet[]; // array of pallets
   createdAt: string;
   completedAt?: string;
   status: "in-progress" | "completed";
@@ -321,6 +333,7 @@ export function createPackingOrder(
 ): PackingOrder {
 
   const boxes: Box[] = [];
+  const pallets: Pallet[] = [];
 
   return {
     id: `packing-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -329,6 +342,7 @@ export function createPackingOrder(
     boxIdType,
     items,
     boxes,
+    pallets,
     createdAt: new Date().toISOString(),
     status: "in-progress",
   };
@@ -353,12 +367,13 @@ export function addBox(order: PackingOrder): Box {
 }
 
 /**
- * Add item to box
+ * Add item to box and update pallet totals if applicable
  */
 export function addItemToBox(
   box: Box,
   item: PackingItem,
-  quantityPacked: number
+  quantityPacked: number,
+  order?: PackingOrder | null
 ): BoxContent {
 
   const currentPacked = item.packedQty || 0;
@@ -381,6 +396,14 @@ export function addItemToBox(
 
   box.contents.push(content);
   box.totalItems += quantityPacked;
+
+  // Update pallet totals if box is assigned to a pallet
+  if (order && box.palletId && order.pallets) {
+    const pallet = order.pallets.find((p) => p.palletId === box.palletId);
+    if (pallet) {
+      pallet.totalItems += quantityPacked;
+    }
+  }
 
   return content;
 }
@@ -459,4 +482,199 @@ export function deletePackingRecord(orderId: string): void {
   } catch (error) {
     console.error("Error deleting packing record:", error);
   }
+}
+
+/**
+ * Create a new pallet and add it to the order
+ */
+export function createPallet(order: PackingOrder, boxIds: string[] = []): Pallet {
+  const palletNumber = (order.pallets?.length || 0) + 1;
+  const palletId = `PALLET-${String(palletNumber).padStart(3, "0")}`;
+
+  let totalItems = 0;
+  for (const boxId of boxIds) {
+    const box = order.boxes.find((b) => b.boxId === boxId);
+    if (box) {
+      totalItems += box.totalItems;
+      box.palletId = palletId; // assign box to pallet
+    }
+  }
+
+  const pallet: Pallet = {
+    palletId,
+    boxIds,
+    createdAt: new Date().toISOString(),
+    totalBoxes: boxIds.length,
+    totalItems,
+  };
+
+  return pallet;
+}
+
+/**
+ * Add a box to an existing pallet (with proper total recalculation)
+ */
+export function addBoxToPallet(
+  order: PackingOrder,
+  palletId: string,
+  boxId: string
+): Pallet | null {
+  if (!order.pallets) {
+    order.pallets = [];
+  }
+
+  const pallet = order.pallets.find((p) => p.palletId === palletId);
+  if (!pallet) return null;
+
+  const box = order.boxes.find((b) => b.boxId === boxId);
+  if (!box) return null;
+
+  // If box is already in a pallet, remove it from old pallet first
+  if (box.palletId && box.palletId !== palletId) {
+    removeBoxFromPallet(order, box.palletId, boxId);
+  }
+
+  // Add to new pallet only if not already there
+  if (!pallet.boxIds.includes(boxId)) {
+    pallet.boxIds.push(boxId);
+    box.palletId = palletId;
+  }
+
+  // Recalculate pallet totals
+  recalculatePalletTotals(order, palletId);
+
+  return pallet;
+}
+
+/**
+ * Remove a box from a pallet (with proper total recalculation)
+ */
+export function removeBoxFromPallet(
+  order: PackingOrder,
+  palletId: string,
+  boxId: string
+): void {
+  if (!order.pallets) return;
+
+  const pallet = order.pallets.find((p) => p.palletId === palletId);
+  if (!pallet) return;
+
+  const boxIndex = pallet.boxIds.indexOf(boxId);
+  if (boxIndex >= 0) {
+    pallet.boxIds.splice(boxIndex, 1);
+    
+    const box = order.boxes.find((b) => b.boxId === boxId);
+    if (box) {
+      box.palletId = undefined;
+    }
+
+    // Recalculate pallet totals
+    recalculatePalletTotals(order, palletId);
+  }
+}
+
+/**
+ * Rename a box
+ */
+export function renameBox(order: PackingOrder, boxId: string, newName: string): void {
+  const box = order.boxes.find((b) => b.boxId === boxId);
+  if (box) {
+    box.customName = newName || undefined;
+  }
+}
+
+/**
+ * Rename a pallet
+ */
+export function renamePallet(order: PackingOrder, palletId: string, newName: string): void {
+  if (!order.pallets) return;
+  const pallet = order.pallets.find((p) => p.palletId === palletId);
+  if (pallet && newName.trim()) {
+    pallet.customName = newName;
+  }
+}
+
+/**
+ * Recalculate pallet totals based on current box contents
+ */
+export function recalculatePalletTotals(order: PackingOrder, palletId: string): void {
+  if (!order.pallets) return;
+
+  const pallet = order.pallets.find((p) => p.palletId === palletId);
+  if (!pallet) return;
+
+  let totalBoxes = 0;
+  let totalItems = 0;
+
+  for (const boxId of pallet.boxIds) {
+    const box = order.boxes.find((b) => b.boxId === boxId);
+    if (box) {
+      totalBoxes++;
+      totalItems += box.totalItems;
+    }
+  }
+
+  pallet.totalBoxes = totalBoxes;
+  pallet.totalItems = totalItems;
+}
+
+/**
+ * Remove item from box and update pallet totals
+ */
+export function removeItemFromBox(
+  box: Box,
+  itemIndex: number,
+  order?: PackingOrder | null
+): void {
+  if (itemIndex < 0 || itemIndex >= box.contents.length) return;
+
+  const content = box.contents[itemIndex];
+  const quantityToRemove = content.quantityPacked;
+
+  // Find the item and reduce packedQty
+  const item = order?.items.find((i) => i.sku === content.itemSku);
+  if (item) {
+    item.packedQty = Math.max(0, (item.packedQty || 0) - quantityToRemove);
+  }
+
+  box.contents.splice(itemIndex, 1);
+  box.totalItems -= quantityToRemove;
+
+  // Update pallet totals if box is assigned to a pallet
+  if (order && box.palletId && order.pallets) {
+    recalculatePalletTotals(order, box.palletId);
+  }
+}
+
+/**
+ * Get pallet summary statistics
+ */
+export function getPalletSummary(
+  order: PackingOrder
+): {
+  totalPallets: number;
+  boxesPerPallet: Record<string, number>;
+  itemsPerPallet: Record<string, number>;
+  unassignedBoxes: number;
+} {
+  if (!order.pallets) {
+    order.pallets = [];
+  }
+
+  const boxesPerPallet: Record<string, number> = {};
+  const itemsPerPallet: Record<string, number> = {};
+
+  for (const pallet of order.pallets) {
+    boxesPerPallet[pallet.palletId] = pallet.totalBoxes;
+    itemsPerPallet[pallet.palletId] = pallet.totalItems;
+  }
+
+  const unassignedBoxes = order.boxes.filter((b) => !b.palletId).length;
+
+  return {
+    totalPallets: order.pallets.length,
+    boxesPerPallet,
+    itemsPerPallet,
+    unassignedBoxes,
+  };
 }

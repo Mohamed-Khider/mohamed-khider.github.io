@@ -1,67 +1,100 @@
-import { execFileSync } from "child_process";
+const { execFile, execFileSync } = require("child_process");
 
-export function getPrinters() {
-  try {
-    const output = runPowerShell(
-      "Get-Printer | Select Name,DriverName,PortName,PrinterStatus,Shared,ShareName | ConvertTo-Json -Depth 2"
-    );
-
-    if (!output || output.trim() === "") return [];
-
-    const parsed = JSON.parse(output);
-
-    // ensure always array
-    return Array.isArray(parsed) ? parsed : [parsed];
-  } catch (error) {
-    console.error("Printer fetch error:", error);
-    return [];
-  }
+function runPowerShell(command, args = []) {
+  return execFileSync(
+    "powershell",
+    [
+      "-NoProfile",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-Command",
+      "& { " + command + " }",
+      ...args,
+    ],
+    {
+      encoding: "utf8",
+      windowsHide: true,
+    }
+  );
 }
 
-export function getDefaultPrinterName(): string | null {
-  try {
-    const output = runPowerShell(
-      "(Get-CimInstance Win32_Printer | Where-Object { $_.Default -eq $true } | Select-Object -First 1 -ExpandProperty Name)"
+function runPowerShellAsync(command, args = []) {
+  return new Promise((resolve, reject) => {
+    execFile(
+      "powershell",
+      ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command, ...args],
+      { encoding: "utf-8", windowsHide: true },
+      (error, stdout, stderr) => {
+        if (error) {
+          reject(new Error(stderr || error.message));
+          return;
+        }
+        resolve(stdout);
+      }
     );
-    return output.trim() || null;
-  } catch (error) {
-    console.error("Default printer fetch error:", error);
-    return null;
-  }
+  });
 }
 
-export function setDefaultPrinter(printerName: string) {
-  try {
-    runPowerShell(
-      "param([string]$Name) Start-Process -FilePath 'rundll32.exe' -ArgumentList @('printui.dll,PrintUIEntry','/y','/n', $Name) -Wait",
-      [printerName]
-    );
-    return true;
-  } catch (error) {
-    console.error("Set default printer error:", error);
-    return false;
-  }
+function getPrinters() {
+  const output = runPowerShell(
+    "Get-Printer | Select Name,DriverName,PortName,PrinterStatus,Shared,ShareName | ConvertTo-Json -Depth 2"
+  );
+
+  if (!output || output.trim() === "") return [];
+
+  const parsed = JSON.parse(output);
+  return Array.isArray(parsed) ? parsed : [parsed];
 }
 
-export function printTest(printerName: string) {
-  try {
-    sendRawZplToPrinter(
-      printerName,
-      "^XA^FO30,30^A0N,36,36^FDWarehouse Zebra test^FS^XZ"
-    );
-    return true;
-  } catch (error) {
-    console.error("Print error:", error);
-    return false;
-  }
+// function getDefaultPrinterName() {
+//   const output = runPowerShell(
+//     "(Get-CimInstance Win32_Printer | Where-Object { $_.Default -eq $true } | Select-Object -First 1 -ExpandProperty Name)"
+//   );
+//   return output.trim() || null;
+// }
+
+
+// function setDefaultPrinter(printerName) {
+//   const escaped = printerName.replace(/'/g, "''");
+
+//   runPowerShell(`
+//     Set-Printer -Name '${escaped}' -IsDefault $true
+//   `);
+// }
+
+
+function setDefaultPrinter(printerName) {
+  const escaped = printerName.replace(/'/g, "''");
+
+  runPowerShell(`
+    (New-Object -ComObject WScript.Network)
+      .SetDefaultPrinter('${escaped}')
+  `);
 }
 
-export function sendRawZplToPrinter(printerName: string, zpl: string) {
-  if (!printerName?.trim()) {
+console.log(getPrinters().map(p => p.Name));
+
+
+function setDefaultPrinter(printerName) {
+  runPowerShell(
+    "param([string]$Name) Start-Process -FilePath 'rundll32.exe' -ArgumentList @('printui.dll,PrintUIEntry','/y','/n', $Name) -Wait",
+    [printerName]
+  );
+}
+
+async function setDefaultPrinterAsync(printerName) {
+  await runPowerShellAsync(
+    "param([string]$Name) Start-Process -FilePath 'rundll32.exe' -ArgumentList @('printui.dll,PrintUIEntry','/y','/n', $Name) -Wait",
+    [printerName]
+  );
+}
+
+function sendRawZplToPrinter(printerName, zpl) {
+  if (!printerName || !printerName.trim()) {
     throw new Error("Printer name is required.");
   }
 
-  if (!zpl?.trim()) {
+  if (!zpl || !zpl.trim()) {
     throw new Error("ZPL payload is required.");
   }
 
@@ -147,10 +180,18 @@ if (-not $ok) {
   ]);
 }
 
-function runPowerShell(command: string, args: string[] = []) {
-  return execFileSync(
-    "powershell",
-    ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command, ...args],
-    { encoding: "utf-8", windowsHide: true }
+function printTest(printerName) {
+  sendRawZplToPrinter(
+    printerName,
+    "^XA^FO30,30^A0N,36,36^FDWarehouse Zebra test^FS^XZ"
   );
 }
+
+module.exports = {
+  getDefaultPrinterName,
+  getPrinters,
+  printTest,
+  sendRawZplToPrinter,
+  setDefaultPrinter,
+  setDefaultPrinterAsync,
+};

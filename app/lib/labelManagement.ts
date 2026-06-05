@@ -29,7 +29,7 @@ export interface LabelSize {
   height: number;
 }
 
-export type PrinterConnectionMethod = "wifi" | "usb" | "bluetooth";
+export type PrinterConnectionMethod = "wifi" | "usb" | "bluetooth" | "system";
 
 export interface PrinterProfile {
   id: string;
@@ -112,9 +112,9 @@ function buildSingleLabelZpl(value: string, sizeId: LabelSizeType): string {
 
 function calculateBarcodeWidth(value: string, moduleWidth: number) {
   const charCount = value.length;
-
+  
   const totalModules = charCount * 11 + 35; // Code128 formula
-
+  
   return totalModules * moduleWidth;
 }
 
@@ -127,7 +127,7 @@ function saveProfiles(profiles: PrinterProfile[]): void {
 }
 
 export function initializePrinterProfiles(): void {
-  if (typeof window === "undefined") return;
+if (typeof window === "undefined") return;
   if (!localStorage.getItem(PRINTER_PROFILES_KEY)) {
     saveProfiles(DEFAULT_PRINTER_PROFILES);
   }

@@ -47,11 +47,15 @@ export default function GenerateBarcodePage() {
       return;
     }
 
+    if (!canPrint) {
+      openNotification("Permission Required", "Your account does not have permission to print labels.", "warning");
+      return;
+    }
+
     setIsPrinting(true);
 
     try {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      window.print();
+      await sendZplToPrinter(zplText);
       openNotification("Printed Successfully", "Your barcode label was sent to the printer.", "success");
     } catch (error) {
       openNotification("Print Failed", String(error), "warning");
@@ -135,10 +139,10 @@ export default function GenerateBarcodePage() {
             <button
               className="primary-button"
               type="button"
-              disabled={!value.trim() || isPrinting}
+              disabled={!value.trim() || isPrinting || !canPrint}
               onClick={handlePrint}
             >
-              {isPrinting ? "Printing..." : "Print Preview"}
+              {isPrinting ? "Printing..." : "Print"}
             </button>
             <button
               className="second-button"

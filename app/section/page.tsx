@@ -72,7 +72,7 @@ export default function SectionPage() {
     }
 
     let y = 60;
-    let zpl = `^XA\n^PW812\n^LL1218\n^BY3,2,120\n\n`;
+    let zpl = `^XA\n^PW812\n^LL1218\n^BY2,2,120\n\n`;
 
     codes.forEach((code) => {
       const levelCode = code.split("-").pop();

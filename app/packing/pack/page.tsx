@@ -10,10 +10,19 @@ import {
   addItemToBox,
   validatePackingComplete,
   savePackingRecord,
+  createPallet,
+  addBoxToPallet,
+  removeBoxFromPallet,
+  renameBox,
+  renamePallet,
+  recalculatePalletTotals,
+  removeItemFromBox,
+  getPalletSummary,
   type PackingOrder,
   type Box,
   type PackingItem,
   type BoxContent,
+  type Pallet,
 } from "../../lib/packingManagement";
 import { useToast } from "../../components/ToastProvider";
 import { generatePackingListPDF, exportPackingListExcel } from "../../lib/packingExport";
@@ -28,6 +37,12 @@ export default function PackingPage() {
   const [highlightSku, setHighlightSku] = useState<string | null>(null);
   const [multiSelectSkus, setMultiSelectSkus] = useState<Set<string>>(new Set());
   const [multiSelectQty, setMultiSelectQty] = useState<Record<string, number>>({});
+  const [editingBoxId, setEditingBoxId] = useState<string | null>(null);
+  const [editingBoxName, setEditingBoxName] = useState("");
+  const [editingPalletId, setEditingPalletId] = useState<string | null>(null);
+  const [editingPalletName, setEditingPalletName] = useState("");
+  const [selectedPalletId, setSelectedPalletId] = useState<string | null>(null);
+  const [showPalletModal, setShowPalletModal] = useState(false);
   const highlightTimerRef = useRef<number | null>(null);
   const itemsSelectRef = useRef<HTMLSelectElement | null>(null);
   const statusListRef = useRef<HTMLDivElement | null>(null);
@@ -227,6 +242,74 @@ export default function PackingPage() {
     showToast("Status Updated", `${sku} marked as ${status.replace(/_/g, " ")}`, "success");
   };
 
+  // Pallet management handlers
+  const handleCreatePallet = () => {
+    if (!packingOrder) return;
+    if (!packingOrder.pallets) packingOrder.pallets = [];
+
+    const newPallet = createPallet(packingOrder);
+    packingOrder.pallets.push(newPallet);
+    const updatedOrder = { ...packingOrder };
+    setPackingOrder(updatedOrder);
+    saveSessionOrder(updatedOrder);
+    setSelectedPalletId(newPallet.palletId);
+    showToast("✓ Pallet Created", `${newPallet.palletId}`, "success");
+  };
+
+  const handleAddBoxToPallet = (palletId: string, boxId: string) => {
+    if (!packingOrder || !packingOrder.pallets) return;
+    addBoxToPallet(packingOrder, palletId, boxId);
+    const updatedOrder = { ...packingOrder };
+    setPackingOrder(updatedOrder);
+    saveSessionOrder(updatedOrder);
+    showToast("✓ Box Assigned", `${boxId} → ${palletId}`, "success");
+  };
+
+  const handleRemoveBoxFromPallet = (palletId: string, boxId: string) => {
+    if (!packingOrder || !packingOrder.pallets) return;
+    removeBoxFromPallet(packingOrder, palletId, boxId);
+    const updatedOrder = { ...packingOrder };
+    setPackingOrder(updatedOrder);
+    saveSessionOrder(updatedOrder);
+    showToast("✓ Box Removed", `${boxId} removed from ${palletId}`, "success");
+  };
+
+  const handleRenameBox = (boxId: string) => {
+    if (!packingOrder || !editingBoxName.trim()) {
+      showToast("Validation Error", "Enter a box name", "warning");
+      return;
+    }
+    renameBox(packingOrder, boxId, editingBoxName);
+    const updatedOrder = { ...packingOrder };
+    setPackingOrder(updatedOrder);
+    saveSessionOrder(updatedOrder);
+    showToast("✓ Box Renamed", `${boxId} → ${editingBoxName}`, "success");
+    setEditingBoxId(null);
+    setEditingBoxName("");
+  };
+
+  const handleRenamePallet = (palletId: string) => {
+    if (!packingOrder || !editingPalletName.trim()) {
+      showToast("Validation Error", "Enter a pallet name", "warning");
+      return;
+    }
+    renamePallet(packingOrder, palletId, editingPalletName);
+    const updatedOrder = { ...packingOrder };
+    setPackingOrder(updatedOrder);
+    saveSessionOrder(updatedOrder);
+    showToast("✓ Pallet Renamed", `${palletId} → ${editingPalletName}`, "success");
+    setEditingPalletId(null);
+    setEditingPalletName("");
+  };
+
+  const getBoxDisplayName = (box: Box): string => {
+    return box.customName || box.boxId;
+  };
+
+  const getPalletDisplayName = (pallet: Pallet): string => {
+    return pallet.customName || pallet.palletId;
+  };
+
   // Add item to box
   const handleAddItemToBox = () => {
     if (!selectedItem || !quantityInput) {
@@ -262,8 +345,8 @@ export default function PackingPage() {
     setHistory([...history, { boxId: currentBox.boxId, contents: [...currentBox.contents] }]);
     setRedoStack([]);
 
-    // Add to current box
-    const content = addItemToBox(currentBox, selectedItem, qty);
+    // Add to current box (pass packingOrder to update pallet totals)
+    const content = addItemToBox(currentBox, selectedItem, qty, packingOrder);
 
     if (packingOrder) {
       const updatedOrder = { ...packingOrder };
@@ -371,20 +454,19 @@ export default function PackingPage() {
   // Remove specific item from box
   const handleRemoveItemFromBox = (itemIndex: number) => {
     const currentBox = getCurrentBox();
-    if (!currentBox) return;
+    if (!currentBox || !packingOrder) return;
 
     setHistory([...history, { boxId: currentBox.boxId, contents: [...currentBox.contents] }]);
     setRedoStack([]);
 
     const removed = currentBox.contents[itemIndex];
-    currentBox.contents.splice(itemIndex, 1);
-    currentBox.totalItems -= removed.quantityPacked;
+    
+    // Use the new function that updates pallet totals
+    removeItemFromBox(currentBox, itemIndex, packingOrder);
 
-    if (packingOrder) {
-      const updatedOrder = { ...packingOrder };
-      setPackingOrder(updatedOrder);
-      saveSessionOrder(updatedOrder);
-    }
+    const updatedOrder = { ...packingOrder };
+    setPackingOrder(updatedOrder);
+    saveSessionOrder(updatedOrder);
 
     showToast("Item Removed", `${removed.itemName} removed from box`, "info");
   };
@@ -902,10 +984,15 @@ export default function PackingPage() {
                       }),
                     }}
                   >
-                    <div style={{ fontSize: "13px" }}>{box.boxId}</div>
+                    <div style={{ fontSize: "13px" }}>{getBoxDisplayName(box)}</div>
                     <div style={{ fontSize: "10px", color: "#6b7280", marginTop: "4px" }}>
                       {box.totalItems} items
                     </div>
+                    {box.palletId && (
+                      <div style={{ fontSize: "9px", color: "#059669", marginTop: "3px", fontWeight: "600" }}>
+                        📋 {box.palletId}
+                      </div>
+                    )}
                   </button>
                 ))}
               </div>
@@ -1166,6 +1253,29 @@ export default function PackingPage() {
                 style={{ fontSize: "13px" }}
               >
                 ✓ Complete Box
+              </button>
+              <button
+                className="second-button"
+                onClick={() => setEditingBoxId(currentBoxId)}
+                disabled={!currentBoxId}
+                style={{ fontSize: "13px" }}
+              >
+                ✎ Rename Box
+              </button>
+              <button
+                className="second-button"
+                onClick={() => setShowPalletModal(true)}
+                disabled={!currentBoxId || !packingOrder?.pallets?.length}
+                style={{ fontSize: "13px" }}
+              >
+                📋 Assign to Pallet
+              </button>
+              <button
+                className="second-button"
+                onClick={handleCreatePallet}
+                style={{ fontSize: "13px" }}
+              >
+                ➕ New Pallet
               </button>
               <button
                 className="second-button"
@@ -1445,6 +1555,362 @@ export default function PackingPage() {
           </div>
         </div>
       </div>
+
+      {/* Edit Box Name Modal */}
+      {editingBoxId && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "rgba(0, 0, 0, 0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+          }}
+          onClick={() => setEditingBoxId(null)}
+        >
+          <div
+            style={{
+              backgroundColor: "white",
+              borderRadius: "12px",
+              padding: "24px",
+              maxWidth: "400px",
+              width: "90%",
+              boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 style={{ margin: "0 0 16px 0", fontSize: "18px", fontWeight: "700" }}>
+              📝 Rename Box
+            </h2>
+            <p style={{ margin: "0 0 16px 0", color: "#6b7280", fontSize: "14px" }}>
+              Current: <strong>{editingBoxId}</strong>
+            </p>
+            <input
+              type="text"
+              placeholder="Enter box name (e.g., Special Order, Client A)"
+              value={editingBoxName}
+              onChange={(e) => setEditingBoxName(e.target.value)}
+              onKeyPress={(e) => e.key === "Enter" && handleRenameBox(editingBoxId)}
+              autoFocus
+              style={{
+                width: "100%",
+                padding: "12px",
+                border: "2px solid #e5e7eb",
+                borderRadius: "8px",
+                fontSize: "14px",
+                marginBottom: "16px",
+                boxSizing: "border-box",
+              }}
+            />
+            <div style={{ display: "flex", gap: "12px" }}>
+              <button
+                onClick={() => handleRenameBox(editingBoxId)}
+                style={{
+                  flex: 1,
+                  padding: "10px",
+                  backgroundColor: "#2563eb",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "8px",
+                  fontSize: "14px",
+                  fontWeight: "600",
+                  cursor: "pointer",
+                }}
+              >
+                ✓ Rename
+              </button>
+              <button
+                onClick={() => setEditingBoxId(null)}
+                style={{
+                  flex: 1,
+                  padding: "10px",
+                  backgroundColor: "#e5e7eb",
+                  color: "#6b7280",
+                  border: "none",
+                  borderRadius: "8px",
+                  fontSize: "14px",
+                  fontWeight: "600",
+                  cursor: "pointer",
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Pallet Name Modal */}
+      {editingPalletId && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "rgba(0, 0, 0, 0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+          }}
+          onClick={() => setEditingPalletId(null)}
+        >
+          <div
+            style={{
+              backgroundColor: "white",
+              borderRadius: "12px",
+              padding: "24px",
+              maxWidth: "400px",
+              width: "90%",
+              boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 style={{ margin: "0 0 16px 0", fontSize: "18px", fontWeight: "700" }}>
+              📋 Rename Pallet
+            </h2>
+            <p style={{ margin: "0 0 16px 0", color: "#6b7280", fontSize: "14px" }}>
+              Current: <strong>{editingPalletId}</strong>
+            </p>
+            <input
+              type="text"
+              placeholder="Enter pallet name (e.g., Urgent Order, Customer XYZ)"
+              value={editingPalletName}
+              onChange={(e) => setEditingPalletName(e.target.value)}
+              onKeyPress={(e) => e.key === "Enter" && handleRenamePallet(editingPalletId)}
+              autoFocus
+              style={{
+                width: "100%",
+                padding: "12px",
+                border: "2px solid #e5e7eb",
+                borderRadius: "8px",
+                fontSize: "14px",
+                marginBottom: "16px",
+                boxSizing: "border-box",
+              }}
+            />
+            <div style={{ display: "flex", gap: "12px" }}>
+              <button
+                onClick={() => handleRenamePallet(editingPalletId)}
+                style={{
+                  flex: 1,
+                  padding: "10px",
+                  backgroundColor: "#2563eb",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "8px",
+                  fontSize: "14px",
+                  fontWeight: "600",
+                  cursor: "pointer",
+                }}
+              >
+                ✓ Rename
+              </button>
+              <button
+                onClick={() => setEditingPalletId(null)}
+                style={{
+                  flex: 1,
+                  padding: "10px",
+                  backgroundColor: "#e5e7eb",
+                  color: "#6b7280",
+                  border: "none",
+                  borderRadius: "8px",
+                  fontSize: "14px",
+                  fontWeight: "600",
+                  cursor: "pointer",
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Assign to Pallet Modal */}
+      {showPalletModal && packingOrder?.pallets && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "rgba(0, 0, 0, 0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+          }}
+          onClick={() => setShowPalletModal(false)}
+        >
+          <div
+            style={{
+              backgroundColor: "white",
+              borderRadius: "12px",
+              padding: "24px",
+              maxWidth: "500px",
+              width: "90%",
+              maxHeight: "80vh",
+              overflowY: "auto",
+              boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 style={{ margin: "0 0 16px 0", fontSize: "18px", fontWeight: "700" }}>
+              📋 Assign Box to Pallet
+            </h2>
+            <p style={{ margin: "0 0 16px 0", color: "#6b7280", fontSize: "14px" }}>
+              Box: <strong>{currentBoxId}</strong>
+            </p>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "12px", maxHeight: "400px", overflowY: "auto" }}>
+              {packingOrder.pallets.map((pallet) => (
+                <div
+                  key={pallet.palletId}
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    padding: "12px",
+                    backgroundColor: "#f9fafb",
+                    border: "1px solid #e5e7eb",
+                    borderRadius: "8px",
+                  }}
+                >
+                  <div>
+                    <div style={{ fontWeight: "600", fontSize: "14px" }}>{pallet.palletId}</div>
+                    <div style={{ fontSize: "12px", color: "#6b7280" }}>
+                      {pallet.totalBoxes} boxes, {pallet.totalItems} items
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      handleAddBoxToPallet(pallet.palletId, currentBoxId!);
+                      setShowPalletModal(false);
+                    }}
+                    style={{
+                      padding: "8px 16px",
+                      backgroundColor: "#2563eb",
+                      color: "white",
+                      border: "none",
+                      borderRadius: "6px",
+                      fontSize: "12px",
+                      fontWeight: "600",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Assign
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <button
+              onClick={() => setShowPalletModal(false)}
+              style={{
+                width: "100%",
+                padding: "10px",
+                marginTop: "16px",
+                backgroundColor: "#e5e7eb",
+                color: "#6b7280",
+                border: "none",
+                borderRadius: "8px",
+                fontSize: "14px",
+                fontWeight: "600",
+                cursor: "pointer",
+              }}
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Pallet Overview Section */}
+      {packingOrder?.pallets && packingOrder.pallets.length > 0 && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: "20px",
+            right: "20px",
+            backgroundColor: "white",
+            border: "1px solid #e5e7eb",
+            borderRadius: "12px",
+            padding: "16px",
+            maxWidth: "320px",
+            maxHeight: "400px",
+            overflowY: "auto",
+            boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.1)",
+          }}
+        >
+          <h3 style={{ margin: "0 0 12px 0", fontSize: "14px", fontWeight: "700" }}>
+            📦 Pallets ({packingOrder.pallets.length})
+          </h3>
+          {packingOrder.pallets.map((pallet) => (
+            <div
+              key={pallet.palletId}
+              style={{
+                padding: "10px",
+                backgroundColor: "#f9fafb",
+                borderRadius: "6px",
+                marginBottom: "8px",
+                fontSize: "12px",
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", marginBottom: "6px" }}>
+                <div>
+                  <div style={{ fontWeight: "600", fontSize: "13px" }}>
+                    {getPalletDisplayName(pallet)}
+                  </div>
+                  <div style={{ color: "#6b7280", marginTop: "2px" }}>
+                    📦 {pallet.totalBoxes} | 📊 {pallet.totalItems}
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    setEditingPalletId(pallet.palletId);
+                    setEditingPalletName(pallet.customName || "");
+                  }}
+                  style={{
+                    padding: "4px 8px",
+                    backgroundColor: "#dbeafe",
+                    color: "#0369a1",
+                    border: "none",
+                    borderRadius: "4px",
+                    cursor: "pointer",
+                    fontSize: "11px",
+                    fontWeight: "600",
+                  }}
+                  title="Rename pallet"
+                >
+                  ✎
+                </button>
+              </div>
+            </div>
+          ))}
+          {packingOrder.boxes.filter((b) => !b.palletId).length > 0 && (
+            <div
+              style={{
+                padding: "8px",
+                backgroundColor: "#fef3c7",
+                borderRadius: "6px",
+                fontSize: "12px",
+                color: "#78350f",
+              }}
+            >
+              ⚠️ {packingOrder.boxes.filter((b) => !b.palletId).length} unassigned box(es)
+            </div>
+          )}
+        </div>
+      )}
 
       <NotificationModal
         open={!!notification}

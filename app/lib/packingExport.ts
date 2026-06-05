@@ -128,25 +128,190 @@ export async function generatePackingListPDF(order: PackingOrder): Promise<void>
 
     yPosition += 5;
 
-    // Box details
-    addText(`BOX CONTENTS:`, 11, true);
+    // Box details grouped by pallets
+    const { pallets, unassignedBoxes } = getBoxesByPallet(order);
+    
+    if (pallets.length > 0) {
+      addText(`PALLETS & BOX CONTENTS:`, 11, true);
 
-    for (const box of order.boxes) {
-      if (yPosition > pageHeight - 40) {
-        pdf.addPage();
-        yPosition = 20;
+      for (const pallet of pallets) {
+        if (yPosition > pageHeight - 40) {
+          pdf.addPage();
+          yPosition = 20;
+        }
+
+        // Pallet header
+        pdf.setFillColor(220, 200, 255);
+        pdf.rect(20, yPosition - 3, pageWidth - 40, 7, "F");
+        pdf.setFontSize(14);
+        pdf.setFont("helvetica", "bold");
+        pdf.text(`${pallet.palletId}`, 25, yPosition + 2);
+        yPosition += 10;
+
+        // Boxes in this pallet
+        for (const boxId of pallet.boxIds) {
+          const box = order.boxes.find((b) => b.boxId === boxId);
+          if (!box) continue;
+
+          if (yPosition > pageHeight - 40) {
+            pdf.addPage();
+            yPosition = 20;
+          }
+
+          pdf.setFillColor(200, 220, 255);
+          pdf.rect(20, yPosition - 3, pageWidth - 40, 7, "F");
+          pdf.setFontSize(12);
+          pdf.setFont("helvetica", "bold");
+          const displayName = box.customName || box.boxId;
+          pdf.text(
+            `  ${displayName} - ${box.totalItems} items - Created: ${new Date(box.createdAt).toLocaleDateString()}`,
+            25,
+            yPosition + 2
+          );
+          yPosition += 10;
+
+          // Box contents
+          for (const content of box.contents) {
+            if (yPosition > pageHeight - 40) {
+              pdf.addPage();
+              yPosition = 20;
+            }
+
+            pdf.setFontSize(11);
+            pdf.setFont("helvetica", "normal");
+
+            const boxMarginLeft = 30;
+            const colSkuW = 30;
+            const colQtyW = 20;
+            const colUomW = 18;
+            const colTimeW = 28;
+            const nameAvailable = pageWidth - boxMarginLeft - colSkuW - colQtyW - colUomW - colTimeW - 40;
+
+            // SKU
+            pdf.text(content.itemSku, boxMarginLeft, yPosition + 2);
+
+            // Name (wrapped)
+            const nameLines = pdf.splitTextToSize(content.itemName, nameAvailable);
+            pdf.text(nameLines, boxMarginLeft + colSkuW + 6, yPosition + 2);
+
+            // Qty
+            pdf.text(String(content.quantityPacked), boxMarginLeft + colSkuW + nameAvailable + 10, yPosition + 2);
+
+            // UOM
+            pdf.text(content.uom, boxMarginLeft + colSkuW + nameAvailable + colQtyW + 12, yPosition + 2);
+
+            // Time and pack type on smaller font below if needed
+            pdf.setFontSize(8);
+            pdf.setTextColor(100);
+            const timeText = `${new Date(content.timestamp).toLocaleTimeString()} | ${content.packType} | Req: ${content.quantityRequired}`;
+            const timeLines = pdf.splitTextToSize(timeText, pageWidth - boxMarginLeft - 20);
+            pdf.text(timeLines, boxMarginLeft + colSkuW + 6, yPosition + 6 + (Array.isArray(nameLines) ? nameLines.length * 4 : 2));
+            pdf.setTextColor(0);
+
+            const usedLines = Math.max(Array.isArray(nameLines) ? nameLines.length : 1, Array.isArray(timeLines) ? timeLines.length : 1);
+            yPosition += Math.max(6, usedLines * 5 + 2);
+          }
+
+          yPosition += 3;
+        }
       }
 
-      pdf.setFillColor(200, 220, 255);
-      pdf.rect(20, yPosition - 3, pageWidth - 40, 7, "F");
-      pdf.setFontSize(10);
-      pdf.setFont("helvetica", "bold");
-      pdf.text(
-        `${box.boxId} - ${box.totalItems} items - Created: ${new Date(box.createdAt).toLocaleDateString()}`,
-        25,
-        yPosition + 2
-      );
-      yPosition += 10;
+      // Unassigned boxes
+      if (unassignedBoxes.length > 0) {
+        if (yPosition > pageHeight - 40) {
+          pdf.addPage();
+          yPosition = 20;
+        }
+
+        addText(`UNASSIGNED BOXES:`, 11, true);
+
+        for (const boxId of unassignedBoxes) {
+          const box = order.boxes.find((b) => b.boxId === boxId);
+          if (!box) continue;
+
+          if (yPosition > pageHeight - 40) {
+            pdf.addPage();
+            yPosition = 20;
+          }
+
+          pdf.setFillColor(200, 220, 255);
+          pdf.rect(20, yPosition - 3, pageWidth - 40, 7, "F");
+          pdf.setFontSize(12);
+          pdf.setFont("helvetica", "bold");
+          const displayName = box.customName || box.boxId;
+          pdf.text(
+            `  ${displayName} - ${box.totalItems} items - Created: ${new Date(box.createdAt).toLocaleDateString()}`,
+            25,
+            yPosition + 2
+          );
+          yPosition += 10;
+
+          // Box contents
+          for (const content of box.contents) {
+            if (yPosition > pageHeight - 40) {
+              pdf.addPage();
+              yPosition = 20;
+            }
+
+            pdf.setFontSize(11);
+            pdf.setFont("helvetica", "normal");
+
+            const boxMarginLeft = 30;
+            const colSkuW = 30;
+            const colQtyW = 20;
+            const colUomW = 18;
+            const colTimeW = 28;
+            const nameAvailable = pageWidth - boxMarginLeft - colSkuW - colQtyW - colUomW - colTimeW - 40;
+
+            // SKU
+            pdf.text(content.itemSku, boxMarginLeft, yPosition + 2);
+
+            // Name (wrapped)
+            const nameLines = pdf.splitTextToSize(content.itemName, nameAvailable);
+            pdf.text(nameLines, boxMarginLeft + colSkuW + 6, yPosition + 2);
+
+            // Qty
+            pdf.text(String(content.quantityPacked), boxMarginLeft + colSkuW + nameAvailable + 10, yPosition + 2);
+
+            // UOM
+            pdf.text(content.uom, boxMarginLeft + colSkuW + nameAvailable + colQtyW + 12, yPosition + 2);
+
+            // Time and pack type on smaller font below if needed
+            pdf.setFontSize(8);
+            pdf.setTextColor(100);
+            const timeText = `${new Date(content.timestamp).toLocaleTimeString()} | ${content.packType} | Req: ${content.quantityRequired}`;
+            const timeLines = pdf.splitTextToSize(timeText, pageWidth - boxMarginLeft - 20);
+            pdf.text(timeLines, boxMarginLeft + colSkuW + 6, yPosition + 6 + (Array.isArray(nameLines) ? nameLines.length * 4 : 2));
+            pdf.setTextColor(0);
+
+            const usedLines = Math.max(Array.isArray(nameLines) ? nameLines.length : 1, Array.isArray(timeLines) ? timeLines.length : 1);
+            yPosition += Math.max(6, usedLines * 5 + 2);
+          }
+
+          yPosition += 3;
+        }
+      }
+    } else {
+      // Original box details section (if no pallets)
+      addText(`BOX CONTENTS:`, 11, true);
+
+      for (const box of order.boxes) {
+        if (yPosition > pageHeight - 40) {
+          pdf.addPage();
+          yPosition = 20;
+        }
+
+        pdf.setFillColor(200, 220, 255);
+        pdf.rect(20, yPosition - 3, pageWidth - 40, 7, "F");
+        pdf.setFontSize(14);
+        pdf.setFont("helvetica", "bold");
+        const displayName = box.customName || box.boxId;
+        pdf.text(
+          `${displayName} - ${box.totalItems} items - Created: ${new Date(box.createdAt).toLocaleDateString()}`,
+          25,
+          yPosition + 2
+        );
+        yPosition += 10;
 
       for (const content of box.contents) {
         if (yPosition > pageHeight - 40) {
@@ -154,11 +319,11 @@ export async function generatePackingListPDF(order: PackingOrder): Promise<void>
           yPosition = 20;
         }
 
-        pdf.setFontSize(9);
+        pdf.setFontSize(11);
         pdf.setFont("helvetica", "normal");
 
         const boxMarginLeft = 30;
-        const colSkuW = 28;
+        const colSkuW = 30;
         const colQtyW = 20;
         const colUomW = 18;
         const colTimeW = 28;
@@ -190,6 +355,7 @@ export async function generatePackingListPDF(order: PackingOrder): Promise<void>
       }
 
       yPosition += 3;
+    }
     }
 
     // Footer
@@ -251,7 +417,7 @@ export async function exportPackingListExcel(order: PackingOrder): Promise<void>
     XLSX.utils.book_append_sheet(wb, itemsWs, "Items Summary");
 
     // Box details sheet (only for boxes with packed items)
-    const boxHeader = ["Box ID", "Item SKU", "Item Name", "Pack Type", "Quantity Packed", "UOM", "Required Qty", "Timestamp"];
+    const boxHeader = ["Pallet ID", "Box ID", "Item SKU", "Item Name", "Pack Type", "Quantity Packed", "UOM", "Required Qty", "Timestamp"];
     const boxRows: any[] = [];
     for (const box of order.boxes) {
       for (const content of box.contents) {
@@ -259,6 +425,7 @@ export async function exportPackingListExcel(order: PackingOrder): Promise<void>
         const item = order.items.find((i) => i.sku === content.itemSku);
         if (item && item.itemStatus !== "master_box" && item.itemStatus !== "backed_elsewhere") {
           boxRows.push([
+            box.palletId || "UNASSIGNED",
             box.boxId,
             content.itemSku,
             content.itemName,
@@ -274,6 +441,20 @@ export async function exportPackingListExcel(order: PackingOrder): Promise<void>
     const boxAoA = [boxHeader, ...boxRows];
     const boxWs = XLSX.utils.aoa_to_sheet(boxAoA);
     XLSX.utils.book_append_sheet(wb, boxWs, "Box Contents");
+
+    // Pallets sheet (if pallets exist)
+    if (order.pallets && order.pallets.length > 0) {
+      const palletHeader = ["Pallet ID", "Total Boxes", "Total Items", "Created"];
+      const palletRows = order.pallets.map((p) => [
+        p.palletId,
+        p.totalBoxes,
+        p.totalItems,
+        p.createdAt,
+      ]);
+      const palletAoA = [palletHeader, ...palletRows];
+      const palletWs = XLSX.utils.aoa_to_sheet(palletAoA);
+      XLSX.utils.book_append_sheet(wb, palletWs, "Pallets");
+    }
 
     // Write workbook to binary and trigger download
     const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array" });
@@ -365,5 +546,32 @@ export function generatePackingSummary(order: PackingOrder): {
     totalItems,
     itemsPerBox,
     packTypeDistribution,
+  };
+}
+
+/**
+ * Organize boxes by pallet for export grouping
+ */
+function getBoxesByPallet(order: PackingOrder): {
+  pallets: Array<{ palletId: string; boxIds: string[] }>;
+  unassignedBoxes: string[];
+} {
+  if (!order.pallets || order.pallets.length === 0) {
+    return {
+      pallets: [],
+      unassignedBoxes: order.boxes.map((b) => b.boxId),
+    };
+  }
+
+  const unassignedBoxes = order.boxes
+    .filter((b) => !b.palletId)
+    .map((b) => b.boxId);
+
+  return {
+    pallets: order.pallets.map((p) => ({
+      palletId: p.palletId,
+      boxIds: p.boxIds,
+    })),
+    unassignedBoxes,
   };
 }
