@@ -1,4 +1,4 @@
-export const LOCAL_PRINT_SERVICE_URL = "http://127.0.0.1:3001";
+export const LOCAL_PRINT_SERVICE_URL = "http://localhost:3000";
 
 export async function fetchLocalPrintService(
   path: string,

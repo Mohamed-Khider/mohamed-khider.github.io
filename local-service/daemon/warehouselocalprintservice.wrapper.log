@@ -1,0 +1,2 @@
+2026-06-07 22:24:25 - Starting C:\nvm4w\nodejs\node.exe  --harmony H:\project\nextjs\mohamed-khider.github.io\node_modules\node-windows\lib\wrapper.js --file H:\project\nextjs\mohamed-khider.github.io\local-service\server.js --scriptoptions= --log "WarehouseLocalPrintService wrapper" --grow 0.25 --wait 1 --maxrestarts 3 --abortonerror n --stopparentfirst undefined
+2026-06-07 22:24:25 - Started 10284

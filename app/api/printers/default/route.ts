@@ -4,7 +4,7 @@ import { setDefaultPrinter } from "../../../lib/printerService";
 export async function POST(req: Request) {
   try {
     const { name } = await req.json();
-
+    console.log("api/printers/default"+`Received request to set default printer to: ${name}`);
     if (!name || typeof name !== "string") {
       return NextResponse.json({ success: false, error: "Printer name is required." }, { status: 400 });
     }

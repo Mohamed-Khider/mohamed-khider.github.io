@@ -36,7 +36,7 @@ const SESSION_DURATION_MS = 8 * 60 * 60 * 1000;
 const MAX_FAILED_LOGIN_ATTEMPTS = 5;
 // const LOCKOUT_DURATION_MS = 15 * 60 * 1000;
 const LOCKOUT_DURATION_MS = 0
-const DEFAULT_ADMIN_PASSWORD = "Admin@123456";
+const DEFAULT_ADMIN_PASSWORD = "$123234345Moha";
 
 const ADMIN_PERMISSIONS = [
   "receive_goods",
@@ -266,7 +266,8 @@ export async function setUserPassword(
     password: undefined,
     failedLoginCount: 0,
     lockedUntil: undefined,
-    mustChangePassword: options.mustChangePassword ?? false,
+    // mustChangePassword: options.mustChangePassword ?? false,
+    mustChangePassword: false,
     ...(await createPasswordFields(newPassword)),
   };
 
@@ -285,7 +286,7 @@ export function deleteUser(userId: string): boolean {
 }
 
 function isLocked(user: User): boolean {
-  return !!user.lockedUntil && new Date(user.lockedUntil).getTime() < Date.now();
+  return !!user.lockedUntil && new Date(user.lockedUntil).getTime() > Date.now();
 }
 
 function registerFailedLogin(userId: string): void {

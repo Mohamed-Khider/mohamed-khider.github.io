@@ -46,36 +46,38 @@ function getPrinters() {
   return Array.isArray(parsed) ? parsed : [parsed];
 }
 
-// function getDefaultPrinterName() {
-//   const output = runPowerShell(
-//     "(Get-CimInstance Win32_Printer | Where-Object { $_.Default -eq $true } | Select-Object -First 1 -ExpandProperty Name)"
-//   );
-//   return output.trim() || null;
-// }
+function getDefaultPrinterName() {
+  const output = runPowerShell(
+    "(Get-CimInstance Win32_Printer | Where-Object { $_.Default -eq $true } | Select-Object -First 1 -ExpandProperty Name)"
+  );
+  return output.trim() || null;
+}
+
+
+function setDefaultPrinter(printerName) {
+  const escaped = printerName.replace(/'/g, "''");
+  console.log(`Setting default printer to '${escaped}'...`+escaped);
+  console.log(`Running PowerShell command to set default printer...`);
+  runPowerShell(`
+    Set-Printer -Name '${escaped}' -IsDefault $true
+  `);
+}
 
 
 // function setDefaultPrinter(printerName) {
 //   const escaped = printerName.replace(/'/g, "''");
 
 //   runPowerShell(`
-//     Set-Printer -Name '${escaped}' -IsDefault $true
+//     (New-Object -ComObject WScript.Network)
+//       .SetDefaultPrinter('${escaped}')
 //   `);
 // }
-
-
-function setDefaultPrinter(printerName) {
-  const escaped = printerName.replace(/'/g, "''");
-
-  runPowerShell(`
-    (New-Object -ComObject WScript.Network)
-      .SetDefaultPrinter('${escaped}')
-  `);
-}
 
 console.log(getPrinters().map(p => p.Name));
 
 
 function setDefaultPrinter(printerName) {
+  console.log(`Setting default printer to '${printerName}'...`);
   runPowerShell(
     "param([string]$Name) Start-Process -FilePath 'rundll32.exe' -ArgumentList @('printui.dll,PrintUIEntry','/y','/n', $Name) -Wait",
     [printerName]

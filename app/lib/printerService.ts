@@ -33,9 +33,9 @@ export function getDefaultPrinterName(): string | null {
 export function setDefaultPrinter(printerName: string) {
   try {
     runPowerShell(
-      "param([string]$Name) Start-Process -FilePath 'rundll32.exe' -ArgumentList @('printui.dll,PrintUIEntry','/y','/n', $Name) -Wait",
-      [printerName]
-    );
+  `"param([string]$Name) Set-Printer -Name ${printerName} -IsDefault $true"`,
+  [printerName]
+);
     return true;
   } catch (error) {
     console.error("Set default printer error:", error);

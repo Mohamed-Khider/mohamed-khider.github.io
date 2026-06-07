@@ -1,0 +1,33 @@
+<service>
+	<id>warehouselocalprintservice.exe</id>
+	<name>WarehouseLocalPrintService</name>
+	<description>Local printer bridge for Warehouse Label System Zebra ZPL printing.</description>
+	<executable>C:\nvm4w\nodejs\node.exe</executable>
+	<argument>--harmony</argument>
+	<argument>H:\project\nextjs\mohamed-khider.github.io\node_modules\node-windows\lib\wrapper.js</argument>
+	<argument>--file</argument>
+	<argument>H:\project\nextjs\mohamed-khider.github.io\local-service\server.js</argument>
+	<argument>--scriptoptions=</argument>
+	<argument>--log</argument>
+	<argument>WarehouseLocalPrintService wrapper</argument>
+	<argument>--grow</argument>
+	<argument>0.25</argument>
+	<argument>--wait</argument>
+	<argument>1</argument>
+	<argument>--maxrestarts</argument>
+	<argument>3</argument>
+	<argument>--abortonerror</argument>
+	<argument>n</argument>
+	<argument>--stopparentfirst</argument>
+	<argument>undefined</argument>
+	<logmode>rotate</logmode>
+	<stoptimeout>30sec</stoptimeout>
+	<env name="WAREHOUSE_PRINT_SERVICE_HOST" value="localhost"/>
+	<env name="WAREHOUSE_PRINT_SERVICE_PORT" value="1995"/>
+	<serviceaccount>
+		<domain>MOHAMED</domain>
+		<user>LocalSystem</user>
+		<password></password>
+	</serviceaccount>
+	<workingdirectory>H:\project\nextjs\mohamed-khider.github.io</workingdirectory>
+</service>

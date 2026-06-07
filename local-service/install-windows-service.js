@@ -42,11 +42,11 @@ const service = new Service({
   env: [
     {
       name: "WAREHOUSE_PRINT_SERVICE_HOST",
-      value: "127.0.0.1",
+      value: "localhost",
     },
     {
       name: "WAREHOUSE_PRINT_SERVICE_PORT",
-      value: "3001",
+      value: "1995",
     },
   ],
 });
@@ -62,7 +62,7 @@ service.on("alreadyinstalled", () => {
 });
 
 service.on("start", () => {
-  console.log(`${serviceName} started on http://127.0.0.1:3001`);
+  console.log(`${serviceName} started on http://localhost:1995`);
 });
 
 service.on("error", (error) => {
