@@ -89,6 +89,7 @@ export default function PackingPage() {
   }, [highlightSku]);
   const [quantityInput, setQuantityInput] = useState("");
   const [scanInput, setScanInput] = useState("");
+  const [removeQuantities, setRemoveQuantities] = useState<Record<string, string>>({});
   const { showToast } = useToast();
 
   // History/Redo for undo functionality
@@ -466,19 +467,31 @@ export default function PackingPage() {
     showToast("Item Restored", "Last undo reversed", "success");
   };
 
-  // Remove specific item from box
-  const handleRemoveItemFromBox = (itemIndex: number) => {
-    const currentBox = getCurrentBox();
-    if (!currentBox || !packingOrder) return;
+  // Remove specific item from box by quantity
+  const handleRemoveItemFromBox = (boxId: string, itemIndex: number) => {
+    if (!packingOrder) return;
 
-    setHistory([...history, { boxId: currentBox.boxId, contents: [...currentBox.contents] }]);
+    const targetBox = packingOrder.boxes.find((box) => box.boxId === boxId);
+    if (!targetBox) return;
+
+    const rowKey = `${boxId}-${itemIndex}`;
+    const rawValue = removeQuantities[rowKey] ?? targetBox.contents[itemIndex]?.quantityPacked?.toString() ?? "1";
+    const requestedQty = Math.max(1, Math.min(targetBox.contents[itemIndex]?.quantityPacked || 1, Number(rawValue) || 1));
+
+    setHistory([...history, { boxId: targetBox.boxId, contents: [...targetBox.contents] }]);
     setRedoStack([]);
 
-    const removed = currentBox.contents[itemIndex];
-    removeItemFromBox(currentBox, itemIndex, packingOrder);
+    const removed = targetBox.contents[itemIndex];
+    const removedQty = removeItemFromBox(targetBox, itemIndex, packingOrder, requestedQty);
     persistPackingOrder({ ...packingOrder });
 
-    showToast("Item Removed", `${removed.itemName} removed from box`, "info");
+    showToast(
+      "Quantity Updated",
+      removedQty >= removed.quantityPacked
+        ? `${removed.itemName} removed from box`
+        : `${removedQty} ${removed.uom} of ${removed.itemName} removed`,
+      "info"
+    );
   };
 
   // Handle barcode scanning
@@ -1164,31 +1177,51 @@ export default function PackingPage() {
                             {content.quantityPacked} {content.uom}
                           </p>
                         </div>
-                        <button
-                          onClick={() => handleRemoveItemFromBox(idx)}
-                          style={{
-                            padding: "6px 12px",
-                            backgroundColor: "#fee2e2",
-                            color: "#991b1b",
-                            border: "none",
-                            borderRadius: "6px",
-                            cursor: "pointer",
-                            fontSize: "12px",
-                            fontWeight: "600",
-                            marginLeft: "10px",
-                            transition: "all 0.2s",
-                          }}
-                          onMouseEnter={(e) => {
-                            (e.currentTarget as HTMLButtonElement).style.backgroundColor =
-                              "#fecaca";
-                          }}
-                          onMouseLeave={(e) => {
-                            (e.currentTarget as HTMLButtonElement).style.backgroundColor =
-                              "#fee2e2";
-                          }}
-                        >
-                          Remove
-                        </button>
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginLeft: "10px" }}>
+                          <input
+                            type="number"
+                            min="1"
+                            max={content.quantityPacked}
+                            value={removeQuantities[`${currentBox.boxId}-${idx}`] ?? content.quantityPacked.toString()}
+                            onChange={(e) =>
+                              setRemoveQuantities((prev) => ({
+                                ...prev,
+                                [`${currentBox.boxId}-${idx}`]: e.target.value,
+                              }))
+                            }
+                            style={{
+                              width: "56px",
+                              padding: "6px 8px",
+                              borderRadius: "6px",
+                              border: "1px solid #d1d5db",
+                              fontSize: "12px",
+                            }}
+                          />
+                          <button
+                            onClick={() => handleRemoveItemFromBox(currentBox.boxId, idx)}
+                            style={{
+                              padding: "6px 12px",
+                              backgroundColor: "#fee2e2",
+                              color: "#991b1b",
+                              border: "none",
+                              borderRadius: "6px",
+                              cursor: "pointer",
+                              fontSize: "12px",
+                              fontWeight: "600",
+                              transition: "all 0.2s",
+                            }}
+                            onMouseEnter={(e) => {
+                              (e.currentTarget as HTMLButtonElement).style.backgroundColor =
+                                "#fecaca";
+                            }}
+                            onMouseLeave={(e) => {
+                              (e.currentTarget as HTMLButtonElement).style.backgroundColor =
+                                "#fee2e2";
+                            }}
+                          >
+                            Remove
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -2068,11 +2101,36 @@ export default function PackingPage() {
                       <button onClick={() => { handleRemoveBoxFromPallet(selectedPalletForDetails.palletId, box.boxId); }} style={{ padding: "6px 10px", borderRadius: "6px", border: "none", background: "#fee2e2", color: "#991b1b", cursor: "pointer", fontSize: "11px" }}>Remove</button>
                     </div>
                     <div style={{ fontSize: "12px", color: "#6b7280", marginBottom: "8px" }}>Items: {box.contents.length} • Weight: {box.weight || 0} kg • Volume: {box.volume || 0} m³</div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                       {box.contents.map((content, index) => (
                         <div key={`${box.boxId}-${index}`} style={{ background: "white", borderRadius: "8px", padding: "8px", fontSize: "12px" }}>
-                          <div style={{ fontWeight: "600" }}>{content.itemSku} — {content.itemName}</div>
-                          <div style={{ color: "#6b7280", marginTop: "2px" }}>Qty: {content.quantityPacked} {content.uom}</div>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px" }}>
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontWeight: "600" }}>{content.itemSku} — {content.itemName}</div>
+                              <div style={{ color: "#6b7280", marginTop: "2px" }}>Qty: {content.quantityPacked} {content.uom}</div>
+                            </div>
+                            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                              <input
+                                type="number"
+                                min="1"
+                                max={content.quantityPacked}
+                                value={removeQuantities[`${box.boxId}-${index}`] ?? content.quantityPacked.toString()}
+                                onChange={(e) =>
+                                  setRemoveQuantities((prev) => ({
+                                    ...prev,
+                                    [`${box.boxId}-${index}`]: e.target.value,
+                                  }))
+                                }
+                                style={{ width: "56px", padding: "6px 8px", borderRadius: "6px", border: "1px solid #d1d5db", fontSize: "12px" }}
+                              />
+                              <button
+                                onClick={() => handleRemoveItemFromBox(box.boxId, index)}
+                                style={{ padding: "6px 10px", borderRadius: "6px", border: "none", background: "#fee2e2", color: "#991b1b", cursor: "pointer", fontSize: "11px" }}
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          </div>
                         </div>
                       ))}
                     </div>

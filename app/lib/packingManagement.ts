@@ -124,8 +124,14 @@ function getBarcodeMatchCandidates(input: string): Array<{ value: string; strate
   const normalizedInput = normalizeBarcodeValue(input);
   if (!normalizedInput) return variants;
 
+  const looksNumeric = /^\d+$/.test(normalizedInput);
+
   addVariant(input, "exact");
   addVariant(normalizedInput, "normalized");
+
+  if (!looksNumeric) {
+    return variants;
+  }
 
   const digitsOnly = normalizedInput.replace(/\D/g, "");
   if (digitsOnly) {
@@ -156,9 +162,6 @@ function getBarcodeMatchCandidates(input: string): Array<{ value: string; strate
       addVariant(digitsOnly.padStart(14, "0"), "gtin");
     }
   }
-
-  addVariant(normalizedInput.toLowerCase(), "normalized");
-  addVariant(normalizedInput.toUpperCase(), "normalized");
 
   return variants;
 }
@@ -196,6 +199,7 @@ export function findPackingItemByBarcode(items: PackingItem[], input: string): B
     };
   }
 
+  const looksNumeric = /^\d+$/.test(normalizedInput);
   const exactSkuMatch = items.find((item) => normalizeBarcodeValue(item.sku) === normalizedInput);
   if (exactSkuMatch) {
     return {
@@ -210,11 +214,16 @@ export function findPackingItemByBarcode(items: PackingItem[], input: string): B
 
   const lookup = buildPackingItemBarcodeLookup(items);
   const candidateVariants = getBarcodeMatchCandidates(input);
+  const shouldUseFlexibleMatching = looksNumeric;
   const attemptedValues = candidateVariants.map((variant) => variant.value);
   const matchedItems: PackingItem[] = [];
   const seenSkus = new Set<string>();
 
   for (const candidate of candidateVariants) {
+    if (!shouldUseFlexibleMatching && candidate.strategy !== "exact" && candidate.strategy !== "normalized") {
+      continue;
+    }
+
     const matches = lookup.get(candidate.value) || [];
     if (!matches.length) continue;
 
@@ -914,12 +923,16 @@ export function recalculatePalletTotals(order: PackingOrder, palletId: string): 
 export function removeItemFromBox(
   box: Box,
   itemIndex: number,
-  order?: PackingOrder | null
-): void {
-  if (itemIndex < 0 || itemIndex >= box.contents.length) return;
+  order?: PackingOrder | null,
+  quantityToRemoveOverride?: number
+): number {
+  if (itemIndex < 0 || itemIndex >= box.contents.length) return 0;
 
   const content = box.contents[itemIndex];
-  const quantityToRemove = content.quantityPacked;
+  const quantityToRemove = Math.max(
+    1,
+    Math.min(content.quantityPacked, quantityToRemoveOverride ?? content.quantityPacked)
+  );
 
   // Find the item and reduce packedQty
   const item = order?.items.find((i) => i.sku === content.itemSku);
@@ -927,13 +940,20 @@ export function removeItemFromBox(
     item.packedQty = Math.max(0, (item.packedQty || 0) - quantityToRemove);
   }
 
-  box.contents.splice(itemIndex, 1);
+  if (quantityToRemove >= content.quantityPacked) {
+    box.contents.splice(itemIndex, 1);
+  } else {
+    content.quantityPacked -= quantityToRemove;
+  }
+
   box.totalItems -= quantityToRemove;
 
   // Update pallet totals if box is assigned to a pallet
   if (order && box.palletId && order.pallets) {
     recalculatePalletTotals(order, box.palletId);
   }
+
+  return quantityToRemove;
 }
 
 /**
