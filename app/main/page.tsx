@@ -15,7 +15,7 @@ import {
 } from "../lib/inventoryManagement";
 import { getAllLocations, initializeLocations } from "../lib/locationManagement";
 import { getPackingRecords } from "../lib/packingManagement";
-import { getCurrentUser } from "../lib/userManagement";
+import { getCurrentUser, User } from "../lib/userManagement";
 
 interface ActivityItem {
   label: string;
@@ -42,13 +42,19 @@ const modules = [
 
 export default function MainPage() {
   const router = useRouter();
-  const currentUser = getCurrentUser();
+const [currentUser, setCurrentUser] =useState<User | null>(null);  
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [locationCount, setLocationCount] = useState(0);
   const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [packingCount, setPackingCount] = useState(0);
+const [loading, setLoading] = useState(true);
+
+useEffect(() => {
+  setCurrentUser(getCurrentUser());
+}, []);
 
   useEffect(() => {
+    try {
     initializeInventory();
     initializeLocations();
 
@@ -84,12 +90,56 @@ export default function MainPage() {
     setActivity([...receipts, ...movements, ...shipments, ...adjustments].sort(
       (a, b) => new Date(b.when).getTime() - new Date(a.when).getTime()
     ).slice(0, 8));
+   } catch (error) {
+      console.error(error);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   const stockSummary = useMemo(() => getStockSummary(), [items]);
-  const totalUnits = items.reduce((sum, item) => sum + item.quantity, 0);
-  const lowStock = items.filter((item) => item.quantity > 0 && item.quantity <= 5);
-  const unassigned = items.filter((item) => !item.locationId);
+  const totalUnits = useMemo(
+  () => items.reduce((sum, item) => sum + item.quantity, 0),
+  [items]
+);
+
+const lowStock = useMemo(
+  () => items.filter(item => item.quantity > 0 && item.quantity <= 5),
+  [items]
+);
+
+const unassigned = useMemo(
+  () => items.filter(item => !item.locationId),
+  [items]
+);
+  if (loading) {
+  return (
+    <ProtectedPage>
+      <div className="dashboard-loading">
+        Loading warehouse data...
+      </div>
+    </ProtectedPage>
+  );
+}
+
+const greeting = (() => {
+  const hour = new Date().getHours();
+
+  if (hour < 12) return "Good morning";
+  if (hour < 18) return "Good afternoon";
+
+  return "Good evening";
+})();
+
+const refreshDashboard = () => {
+  const inventoryItems = getInventoryItems();
+
+  setItems(inventoryItems);
+  setLocationCount(
+    getAllLocations().filter(l => l.active).length
+  );
+  setPackingCount(getPackingRecords().length);
+};
 
   return (
     <ProtectedPage>
@@ -97,13 +147,21 @@ export default function MainPage() {
         <section className="dashboard-hero">
           <div>
             <div className="eyebrow">Warehouse Command Center</div>
-            <h1>Good shift, {currentUser?.username ?? "operator"}.</h1>
+            <h1>  {greeting}, {currentUser?.username ?? "Operator"}</h1>
             <p>Track inventory, move stock, pack orders, and print Zebra-ready labels from one control surface.</p>
           </div>
           <div className="hero-status-panel">
             <span className="material-symbols-outlined">verified</span>
             <div>
-              <strong>System Ready</strong>
+              <strong>
+  {items.length > 0
+    ? "Warehouse Online"
+    : "Awaiting Data"}
+</strong>
+
+<span>
+  {items.length} inventory items loaded
+</span>
               <span>Local data, backup, labels, and WMS workflows online</span>
             </div>
           </div>
@@ -138,6 +196,27 @@ export default function MainPage() {
               <span>Low stock SKUs</span>
             </div>
           </div>
+          <div className="metric-card">
+  <span className="material-symbols-outlined">
+    package_2
+  </span>
+
+  <div>
+    <strong>{packingCount}</strong>
+    <span>Packed Orders</span>
+  </div>
+</div>
+
+<div className="metric-card">
+  <span className="material-symbols-outlined">
+    warning
+  </span>
+
+  <div>
+    <strong>{unassigned.length}</strong>
+    <span>Unassigned Items</span>
+  </div>
+</div>
         </section>
 
         <section className="dashboard-grid">
@@ -198,7 +277,10 @@ export default function MainPage() {
                     <strong>{item.label}</strong>
                     <p>{item.detail}</p>
                   </div>
-                  <time>{new Date(item.when).toLocaleString()}</time>
+                  <time>{new Intl.DateTimeFormat("en-GB", {
+  dateStyle: "medium",
+  timeStyle: "short",
+}).format(new Date(item.when))}</time>
                 </div>
               )) : (
                 <div className="empty-state">No warehouse activity yet.</div>

@@ -4,7 +4,7 @@
  */
 
 import * as XLSX from "xlsx";
-import { readJson, writeJson } from "./storage";
+import { readJson, writeJson, removeStorageItem } from "./storage";
 
 export type BoxIdType = "number" | "generated";
 export type PackType = "pack_unit" | "pack_l1";
@@ -46,6 +46,13 @@ export interface Box {
   completedAt?: string;
   totalItems: number;
   palletId?: string; // assigned pallet
+  length?: number;
+  width?: number;
+  height?: number;
+  weight?: number;
+  volume?: number;
+  isMasterBox?: boolean;
+  masterBoxNote?: string;
 }
 
 export interface Pallet {
@@ -55,6 +62,8 @@ export interface Pallet {
   createdAt: string;
   totalBoxes: number;
   totalItems: number;
+  totalWeight?: number;
+  totalVolume?: number;
 }
 
 export interface PackingOrder {
@@ -75,6 +84,94 @@ export interface PackingRecord {
   clientName: string;
   packingData: PackingOrder;
   savedAt: string;
+}
+
+const ACTIVE_PACKING_SESSION_KEY = "current_packing_order";
+
+export function getActivePackingSession(): PackingOrder | null {
+  if (typeof window === "undefined") return null;
+
+  const stored = localStorage.getItem(ACTIVE_PACKING_SESSION_KEY);
+  if (!stored) return null;
+
+  try {
+    return JSON.parse(stored) as PackingOrder;
+  } catch {
+    return null;
+  }
+}
+
+export function saveActivePackingSession(order: PackingOrder): void {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(ACTIVE_PACKING_SESSION_KEY, JSON.stringify(order));
+}
+
+export function clearActivePackingSession(): void {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem(ACTIVE_PACKING_SESSION_KEY);
+}
+
+export function hasActivePackingSession(): boolean {
+  return Boolean(getActivePackingSession());
+}
+
+export function syncPackingOrder(order: PackingOrder): PackingOrder {
+  const boxes = order.boxes.map((box) => ({ ...box, contents: [...box.contents] }));
+  const items = order.items.map((item) => ({ ...item }));
+
+  boxes.forEach((box) => {
+    box.totalItems = box.contents.reduce((sum, content) => sum + content.quantityPacked, 0);
+    if (box.length && box.width && box.height) {
+      box.volume = Number((box.length * box.width * box.height).toFixed(2));
+    }
+  });
+
+  items.forEach((item) => {
+    item.packedQty = boxes.reduce((sum, box) => {
+      return (
+        sum +
+        box.contents
+          .filter((content) => content.itemSku === item.sku)
+          .reduce((contentSum, content) => contentSum + content.quantityPacked, 0)
+      );
+    }, 0);
+  });
+
+  const pallets = (order.pallets || []).map((pallet) => ({ ...pallet, boxIds: [...pallet.boxIds] }));
+
+  boxes.forEach((box) => {
+    box.palletId = undefined;
+  });
+
+  pallets.forEach((pallet) => {
+    let totalBoxes = 0;
+    let totalItems = 0;
+    let totalWeight = 0;
+    let totalVolume = 0;
+
+    pallet.boxIds.forEach((boxId) => {
+      const matchedBox = boxes.find((box) => box.boxId === boxId);
+      if (!matchedBox) return;
+
+      totalBoxes += 1;
+      totalItems += matchedBox.totalItems;
+      totalWeight += matchedBox.weight || 0;
+      totalVolume += matchedBox.volume || 0;
+      matchedBox.palletId = pallet.palletId;
+    });
+
+    pallet.totalBoxes = totalBoxes;
+    pallet.totalItems = totalItems;
+    pallet.totalWeight = Number(totalWeight.toFixed(2));
+    pallet.totalVolume = Number(totalVolume.toFixed(2));
+  });
+
+  return {
+    ...order,
+    boxes,
+    items,
+    pallets,
+  };
 }
 
 /**
@@ -363,6 +460,11 @@ export function addBox(order: PackingOrder): Box {
     contents: [],
     createdAt: new Date().toISOString(),
     totalItems: 0,
+    length: 0,
+    width: 0,
+    height: 0,
+    weight: 0,
+    volume: 0,
   };
 }
 
@@ -423,6 +525,10 @@ export function validatePackingComplete(order: PackingOrder): {
       totalPacked += box.contents
         .filter((c) => c.itemSku === item.sku)
         .reduce((sum, c) => sum + c.quantityPacked, 0);
+    }
+
+      if (item.itemStatus === "master_box" || item.itemStatus === "backed_elsewhere") {
+      continue;
     }
 
     if (totalPacked < item.quantity) {
@@ -506,6 +612,8 @@ export function createPallet(order: PackingOrder, boxIds: string[] = []): Pallet
     createdAt: new Date().toISOString(),
     totalBoxes: boxIds.length,
     totalItems,
+    totalWeight: 0,
+    totalVolume: 0,
   };
 
   return pallet;
@@ -605,17 +713,23 @@ export function recalculatePalletTotals(order: PackingOrder, palletId: string): 
 
   let totalBoxes = 0;
   let totalItems = 0;
+  let totalWeight = 0;
+  let totalVolume = 0;
 
   for (const boxId of pallet.boxIds) {
     const box = order.boxes.find((b) => b.boxId === boxId);
     if (box) {
       totalBoxes++;
       totalItems += box.totalItems;
+      totalWeight += box.weight || 0;
+      totalVolume += box.volume || 0;
     }
   }
 
   pallet.totalBoxes = totalBoxes;
   pallet.totalItems = totalItems;
+  pallet.totalWeight = Number(totalWeight.toFixed(2));
+  pallet.totalVolume = Number(totalVolume.toFixed(2));
 }
 
 /**

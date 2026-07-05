@@ -1,0 +1,51 @@
+node:internal/errors:541
+      throw error;
+      ^
+
+RangeError [ERR_SOCKET_BAD_PORT]: options.port should be >= 0 and < 65536. Received type number (NaN).
+    at Server.listen (node:net:2059:5)
+    at Object.<anonymous> (H:\project\nextjs\mohamed-khider.github.io\local-service\server.js:140:8)
+    at Module._compile (node:internal/modules/cjs/loader:1521:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1623:10)
+    at Module.load (node:internal/modules/cjs/loader:1266:32)
+    at Module._load (node:internal/modules/cjs/loader:1091:12)
+    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:164:12)
+    at node:internal/main/run_main_module:28:49 {
+  code: 'ERR_SOCKET_BAD_PORT'
+}
+
+Node.js v20.20.2
+node:internal/errors:541
+      throw error;
+      ^
+
+RangeError [ERR_SOCKET_BAD_PORT]: options.port should be >= 0 and < 65536. Received type number (NaN).
+    at Server.listen (node:net:2059:5)
+    at Object.<anonymous> (H:\project\nextjs\mohamed-khider.github.io\local-service\server.js:140:8)
+    at Module._compile (node:internal/modules/cjs/loader:1521:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1623:10)
+    at Module.load (node:internal/modules/cjs/loader:1266:32)
+    at Module._load (node:internal/modules/cjs/loader:1091:12)
+    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:164:12)
+    at node:internal/main/run_main_module:28:49 {
+  code: 'ERR_SOCKET_BAD_PORT'
+}
+
+Node.js v20.20.2
+node:internal/errors:541
+      throw error;
+      ^
+
+RangeError [ERR_SOCKET_BAD_PORT]: options.port should be >= 0 and < 65536. Received type number (NaN).
+    at Server.listen (node:net:2059:5)
+    at Object.<anonymous> (H:\project\nextjs\mohamed-khider.github.io\local-service\server.js:140:8)
+    at Module._compile (node:internal/modules/cjs/loader:1521:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1623:10)
+    at Module.load (node:internal/modules/cjs/loader:1266:32)
+    at Module._load (node:internal/modules/cjs/loader:1091:12)
+    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:164:12)
+    at node:internal/main/run_main_module:28:49 {
+  code: 'ERR_SOCKET_BAD_PORT'
+}
+
+Node.js v20.20.2

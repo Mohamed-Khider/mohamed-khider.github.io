@@ -13,7 +13,7 @@ A modern Next.js application for generating and printing warehouse barcode label
 - **Print Preview**: Browser-based print functionality
 - **Warehouse Operations**: Receiving, stock movement, shipments, locations, cycle count, packing, reports, users, and local backup/restore
 - **Hardened Local Auth**: Salted password hashing, password policy, session expiry, failed-login lockout, and default-password change enforcement
-
+done
 ## Production Readiness
 
 This app is ready as a browser-based single-site warehouse tool with local data backup. For secure multi-user production, add a backend database, server-side authentication, audit logs, and server-backed printer integration.

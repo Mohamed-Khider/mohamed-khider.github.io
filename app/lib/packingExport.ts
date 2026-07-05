@@ -417,7 +417,7 @@ export async function exportPackingListExcel(order: PackingOrder): Promise<void>
     XLSX.utils.book_append_sheet(wb, itemsWs, "Items Summary");
 
     // Box details sheet (only for boxes with packed items)
-    const boxHeader = ["Pallet ID", "Box ID", "Item SKU", "Item Name", "Pack Type", "Quantity Packed", "UOM", "Required Qty", "Timestamp"];
+    const boxHeader = ["Pallet ID", "Box ID", "Item SKU", "Item Name", "Pack Type", "Quantity Packed", "UOM", "Required Qty", "Timestamp", "Master Box", "Length", "Width", "Height", "Weight", "Volume"];
     const boxRows: any[] = [];
     for (const box of order.boxes) {
       for (const content of box.contents) {
@@ -434,6 +434,12 @@ export async function exportPackingListExcel(order: PackingOrder): Promise<void>
             content.uom,
             content.quantityRequired,
             content.timestamp,
+            box.isMasterBox ? "YES" : "NO",
+            box.length ?? "",
+            box.width ?? "",
+            box.height ?? "",
+            box.weight ?? "",
+            box.volume ?? "",
           ]);
         }
       }
@@ -444,17 +450,33 @@ export async function exportPackingListExcel(order: PackingOrder): Promise<void>
 
     // Pallets sheet (if pallets exist)
     if (order.pallets && order.pallets.length > 0) {
-      const palletHeader = ["Pallet ID", "Total Boxes", "Total Items", "Created"];
+      const palletHeader = ["Pallet ID", "Total Boxes", "Total Items", "Weight", "Volume", "Created"];
       const palletRows = order.pallets.map((p) => [
         p.palletId,
         p.totalBoxes,
         p.totalItems,
+        p.totalWeight ?? "",
+        p.totalVolume ?? "",
         p.createdAt,
       ]);
       const palletAoA = [palletHeader, ...palletRows];
       const palletWs = XLSX.utils.aoa_to_sheet(palletAoA);
       XLSX.utils.book_append_sheet(wb, palletWs, "Pallets");
     }
+
+    const boxDimensionsHeader = ["Box Number", "Length", "Width", "Height", "Weight", "Volume", "Master Box"];
+    const boxDimensionsRows = order.boxes.map((box) => [
+      box.boxId,
+      box.length ?? "",
+      box.width ?? "",
+      box.height ?? "",
+      box.weight ?? "",
+      box.volume ?? "",
+      box.isMasterBox ? "YES" : "NO",
+    ]);
+    const boxDimensionsAoA = [boxDimensionsHeader, ...boxDimensionsRows];
+    const boxDimensionsWs = XLSX.utils.aoa_to_sheet(boxDimensionsAoA);
+    XLSX.utils.book_append_sheet(wb, boxDimensionsWs, "Box Dimensions");
 
     // Write workbook to binary and trigger download
     const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array" });

@@ -1,2 +1,64 @@
 2026-06-07 22:24:25 - Starting C:\nvm4w\nodejs\node.exe  --harmony H:\project\nextjs\mohamed-khider.github.io\node_modules\node-windows\lib\wrapper.js --file H:\project\nextjs\mohamed-khider.github.io\local-service\server.js --scriptoptions= --log "WarehouseLocalPrintService wrapper" --grow 0.25 --wait 1 --maxrestarts 3 --abortonerror n --stopparentfirst undefined
 2026-06-07 22:24:25 - Started 10284
+2026-06-08 21:13:49 - Starting C:\nvm4w\nodejs\node.exe  --harmony H:\project\nextjs\mohamed-khider.github.io\node_modules\node-windows\lib\wrapper.js --file H:\project\nextjs\mohamed-khider.github.io\local-service\server.js --scriptoptions= --log "WarehouseLocalPrintService wrapper" --grow 0.25 --wait 1 --maxrestarts 3 --abortonerror n --stopparentfirst undefined
+2026-06-08 21:13:50 - Started 8164
+2026-06-10 20:26:30 - Stopping warehouselocalprintservice.exe
+2026-06-10 20:26:30 - ProcessKill 8164
+2026-06-10 20:27:23 - Starting C:\nvm4w\nodejs\node.exe  --harmony H:\project\nextjs\mohamed-khider.github.io\node_modules\node-windows\lib\wrapper.js --file H:\project\nextjs\mohamed-khider.github.io\local-service\server.js --scriptoptions= --log "WarehouseLocalPrintService wrapper" --grow 0.25 --wait 1 --maxrestarts 3 --abortonerror n --stopparentfirst undefined
+2026-06-10 20:27:24 - Started 6936
+2026-06-10 20:27:58 - Stopping warehouselocalprintservice.exe
+2026-06-10 20:27:58 - ProcessKill 6936
+2026-06-10 20:27:58 - Shutdown exception
+Message:Class not registered
+
+Stacktrace:   at System.Runtime.InteropServices.Marshal.ThrowExceptionForHRInternal(Int32 errorCode, IntPtr errorInfo)
+   at System.Management.ManagementScope.InitializeGuts(Object o)
+   at System.Management.ManagementScope.Initialize()
+   at System.Management.ManagementObjectSearcher.Initialize()
+   at System.Management.ManagementObjectSearcher.Get()
+   at winsw.WrapperService.GetChildPids(Int32 pid)
+   at winsw.WrapperService.StopProcessAndChildren(Int32 pid)
+   at winsw.WrapperService.StopIt()
+   at winsw.WrapperService.OnShutdown()
+2026-06-10 20:28:47 - Starting C:\nvm4w\nodejs\node.exe  --harmony H:\project\nextjs\mohamed-khider.github.io\node_modules\node-windows\lib\wrapper.js --file H:\project\nextjs\mohamed-khider.github.io\local-service\server.js --scriptoptions= --log "WarehouseLocalPrintService wrapper" --grow 0.25 --wait 1 --maxrestarts 3 --abortonerror n --stopparentfirst undefined
+2026-06-10 20:28:50 - Started 6540
+2026-06-15 01:41:01 - Starting C:\nvm4w\nodejs\node.exe  --harmony H:\project\nextjs\mohamed-khider.github.io\node_modules\node-windows\lib\wrapper.js --file H:\project\nextjs\mohamed-khider.github.io\local-service\server.js --scriptoptions= --log "WarehouseLocalPrintService wrapper" --grow 0.25 --wait 1 --maxrestarts 3 --abortonerror n --stopparentfirst undefined
+2026-06-15 01:41:01 - Started 4624
+2026-06-18 07:50:14 - Starting C:\nvm4w\nodejs\node.exe  --harmony H:\project\nextjs\mohamed-khider.github.io\node_modules\node-windows\lib\wrapper.js --file H:\project\nextjs\mohamed-khider.github.io\local-service\server.js --scriptoptions= --log "WarehouseLocalPrintService wrapper" --grow 0.25 --wait 1 --maxrestarts 3 --abortonerror n --stopparentfirst undefined
+2026-06-18 07:50:14 - Started 7916
+2026-06-18 07:50:39 - Starting C:\nvm4w\nodejs\node.exe  --harmony H:\project\nextjs\mohamed-khider.github.io\node_modules\node-windows\lib\wrapper.js --file H:\project\nextjs\mohamed-khider.github.io\local-service\server.js --scriptoptions= --log "WarehouseLocalPrintService wrapper" --grow 0.25 --wait 1 --maxrestarts 3 --abortonerror n --stopparentfirst undefined
+2026-06-18 07:50:39 - Started 6376
+2026-06-21 01:49:48 - Starting C:\nvm4w\nodejs\node.exe  --harmony H:\project\nextjs\mohamed-khider.github.io\node_modules\node-windows\lib\wrapper.js --file H:\project\nextjs\mohamed-khider.github.io\local-service\server.js --scriptoptions= --log "WarehouseLocalPrintService wrapper" --grow 0.25 --wait 1 --maxrestarts 3 --abortonerror n --stopparentfirst undefined
+2026-06-21 01:49:48 - Started 4836
+2026-06-21 01:49:58 - Starting C:\nvm4w\nodejs\node.exe  --harmony H:\project\nextjs\mohamed-khider.github.io\node_modules\node-windows\lib\wrapper.js --file H:\project\nextjs\mohamed-khider.github.io\local-service\server.js --scriptoptions= --log "WarehouseLocalPrintService wrapper" --grow 0.25 --wait 1 --maxrestarts 3 --abortonerror n --stopparentfirst undefined
+2026-06-21 01:49:58 - Started 6572
+2026-06-21 01:50:07 - Starting C:\nvm4w\nodejs\node.exe  --harmony H:\project\nextjs\mohamed-khider.github.io\node_modules\node-windows\lib\wrapper.js --file H:\project\nextjs\mohamed-khider.github.io\local-service\server.js --scriptoptions= --log "WarehouseLocalPrintService wrapper" --grow 0.25 --wait 1 --maxrestarts 3 --abortonerror n --stopparentfirst undefined
+2026-06-21 01:50:07 - Started 6728
+2026-06-21 01:50:15 - Starting C:\nvm4w\nodejs\node.exe  --harmony H:\project\nextjs\mohamed-khider.github.io\node_modules\node-windows\lib\wrapper.js --file H:\project\nextjs\mohamed-khider.github.io\local-service\server.js --scriptoptions= --log "WarehouseLocalPrintService wrapper" --grow 0.25 --wait 1 --maxrestarts 3 --abortonerror n --stopparentfirst undefined
+2026-06-21 01:50:15 - Started 6500
+2026-06-24 22:06:55 - Starting C:\nvm4w\nodejs\node.exe  --harmony H:\project\nextjs\mohamed-khider.github.io\node_modules\node-windows\lib\wrapper.js --file H:\project\nextjs\mohamed-khider.github.io\local-service\server.js --scriptoptions= --log "WarehouseLocalPrintService wrapper" --grow 0.25 --wait 1 --maxrestarts 3 --abortonerror n --stopparentfirst undefined
+2026-06-24 22:06:55 - Started 6588
+2026-06-24 22:08:05 - Starting C:\nvm4w\nodejs\node.exe  --harmony H:\project\nextjs\mohamed-khider.github.io\node_modules\node-windows\lib\wrapper.js --file H:\project\nextjs\mohamed-khider.github.io\local-service\server.js --scriptoptions= --log "WarehouseLocalPrintService wrapper" --grow 0.25 --wait 1 --maxrestarts 3 --abortonerror n --stopparentfirst undefined
+2026-06-24 22:08:05 - Started 7100
+2026-06-25 01:20:02 - Starting C:\nvm4w\nodejs\node.exe  --harmony H:\project\nextjs\mohamed-khider.github.io\node_modules\node-windows\lib\wrapper.js --file H:\project\nextjs\mohamed-khider.github.io\local-service\server.js --scriptoptions= --log "WarehouseLocalPrintService wrapper" --grow 0.25 --wait 1 --maxrestarts 3 --abortonerror n --stopparentfirst undefined
+2026-06-25 01:20:02 - Started 6508
+2026-06-25 22:29:29 - Stopping warehouselocalprintservice.exe
+2026-06-25 22:29:29 - ProcessKill 6508
+2026-06-25 22:29:29 - Shutdown exception
+Message:A system shutdown is in progress.
+
+Stacktrace:   at System.Runtime.InteropServices.Marshal.ThrowExceptionForHRInternal(Int32 errorCode, IntPtr errorInfo)
+   at System.Management.ManagementScope.InitializeGuts(Object o)
+   at System.Management.ManagementScope.Initialize()
+   at System.Management.ManagementObjectSearcher.Initialize()
+   at System.Management.ManagementObjectSearcher.Get()
+   at winsw.WrapperService.GetChildPids(Int32 pid)
+   at winsw.WrapperService.StopProcessAndChildren(Int32 pid)
+   at winsw.WrapperService.StopIt()
+   at winsw.WrapperService.OnShutdown()
+2026-06-27 04:36:51 - Starting C:\nvm4w\nodejs\node.exe  --harmony H:\project\nextjs\mohamed-khider.github.io\node_modules\node-windows\lib\wrapper.js --file H:\project\nextjs\mohamed-khider.github.io\local-service\server.js --scriptoptions= --log "WarehouseLocalPrintService wrapper" --grow 0.25 --wait 1 --maxrestarts 3 --abortonerror n --stopparentfirst undefined
+2026-06-27 04:36:51 - Started 6784
+2026-06-28 18:16:51 - Starting C:\nvm4w\nodejs\node.exe  --harmony H:\project\nextjs\mohamed-khider.github.io\node_modules\node-windows\lib\wrapper.js --file H:\project\nextjs\mohamed-khider.github.io\local-service\server.js --scriptoptions= --log "WarehouseLocalPrintService wrapper" --grow 0.25 --wait 1 --maxrestarts 3 --abortonerror n --stopparentfirst undefined
+2026-06-28 18:16:51 - Started 6284
+2026-07-03 20:38:31 - Starting C:\nvm4w\nodejs\node.exe  --harmony H:\project\nextjs\mohamed-khider.github.io\node_modules\node-windows\lib\wrapper.js --file H:\project\nextjs\mohamed-khider.github.io\local-service\server.js --scriptoptions= --log "WarehouseLocalPrintService wrapper" --grow 0.25 --wait 1 --maxrestarts 3 --abortonerror n --stopparentfirst undefined
+2026-07-03 20:38:31 - Started 6456

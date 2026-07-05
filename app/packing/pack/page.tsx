@@ -18,6 +18,10 @@ import {
   recalculatePalletTotals,
   removeItemFromBox,
   getPalletSummary,
+  getActivePackingSession,
+  saveActivePackingSession,
+  clearActivePackingSession,
+  syncPackingOrder,
   type PackingOrder,
   type Box,
   type PackingItem,
@@ -43,6 +47,9 @@ export default function PackingPage() {
   const [editingPalletName, setEditingPalletName] = useState("");
   const [selectedPalletId, setSelectedPalletId] = useState<string | null>(null);
   const [showPalletModal, setShowPalletModal] = useState(false);
+  const [showPalletDetailsModal, setShowPalletDetailsModal] = useState(false);
+  const [boxDimensions, setBoxDimensions] = useState({ length: "", width: "", height: "", weight: "" });
+  const [selectedPalletForDetails, setSelectedPalletForDetails] = useState<Pallet | null>(null);
   const highlightTimerRef = useRef<number | null>(null);
   const itemsSelectRef = useRef<HTMLSelectElement | null>(null);
   const statusListRef = useRef<HTMLDivElement | null>(null);
@@ -97,29 +104,60 @@ export default function PackingPage() {
   const [isExporting, setIsExporting] = useState(false);
 
   useEffect(() => {
-    // Load packing order from session
-    const stored = sessionStorage.getItem("current_packing_order");
-    if (stored) {
-      const order: PackingOrder = JSON.parse(stored);
-      setPackingOrder(order);
+    const storedOrder = getActivePackingSession();
+    if (storedOrder) {
+      const shouldResume = window.confirm(`Resume the previous packing session for ${storedOrder.orderId}?`);
+      if (!shouldResume) {
+        clearActivePackingSession();
+        router.push("/packing");
+        return;
+      }
 
-      // Initialize first box
-      if (order.boxes.length === 0) {
-        const newBox = addBox(order);
-        const updatedOrder: PackingOrder = { ...order, boxes: [newBox] };
-        setPackingOrder(updatedOrder);
+      const normalizedOrder = syncPackingOrder(storedOrder);
+      setPackingOrder(normalizedOrder);
+
+      if (normalizedOrder.boxes.length === 0) {
+        const newBox = addBox(normalizedOrder);
+        const updatedOrder: PackingOrder = { ...normalizedOrder, boxes: [newBox] };
+        const syncedOrder = syncPackingOrder(updatedOrder);
+        setPackingOrder(syncedOrder);
         setCurrentBoxId(newBox.boxId);
-        saveSessionOrder(updatedOrder);
+        saveActivePackingSession(syncedOrder);
       } else {
-        setCurrentBoxId(order.boxes[order.boxes.length - 1].boxId);
+        setCurrentBoxId(normalizedOrder.boxes[normalizedOrder.boxes.length - 1].boxId);
       }
     } else {
       router.push("/packing");
     }
   }, [router]);
 
-  const saveSessionOrder = (order: PackingOrder) => {
-    sessionStorage.setItem("current_packing_order", JSON.stringify(order));
+  useEffect(() => {
+    if (packingOrder) {
+      const syncedOrder = syncPackingOrder(packingOrder);
+      if (JSON.stringify(syncedOrder) !== JSON.stringify(packingOrder)) {
+        setPackingOrder(syncedOrder);
+      }
+      saveActivePackingSession(syncedOrder);
+    }
+  }, [packingOrder]);
+
+  useEffect(() => {
+    const currentActiveBox = getCurrentBox();
+    if (currentActiveBox) {
+      setBoxDimensions({
+        length: currentActiveBox.length?.toString() || "",
+        width: currentActiveBox.width?.toString() || "",
+        height: currentActiveBox.height?.toString() || "",
+        weight: currentActiveBox.weight?.toString() || "",
+      });
+    }
+  }, [currentBoxId, packingOrder]);
+
+  const persistPackingOrder = (order: PackingOrder): PackingOrder => {
+    const syncedOrder = syncPackingOrder(order);
+    setPackingOrder(syncedOrder);
+    saveActivePackingSession(syncedOrder);
+    return syncedOrder;
   };
 
   const getCurrentBox = (): Box | null => {
@@ -216,9 +254,7 @@ export default function PackingPage() {
       packedCount++;
     }
 
-    const updatedOrder = { ...packingOrder };
-    setPackingOrder(updatedOrder);
-    saveSessionOrder(updatedOrder);
+    persistPackingOrder({ ...packingOrder });
 
     showToast(
       "✓ Packed",
@@ -236,9 +272,7 @@ export default function PackingPage() {
     const updatedItems = packingOrder.items.map((item) =>
       item.sku === sku ? { ...item, itemStatus: status } : item
     );
-    const updatedOrder = { ...packingOrder, items: updatedItems };
-    setPackingOrder(updatedOrder);
-    saveSessionOrder(updatedOrder);
+    persistPackingOrder({ ...packingOrder, items: updatedItems });
     showToast("Status Updated", `${sku} marked as ${status.replace(/_/g, " ")}`, "success");
   };
 
@@ -249,9 +283,7 @@ export default function PackingPage() {
 
     const newPallet = createPallet(packingOrder);
     packingOrder.pallets.push(newPallet);
-    const updatedOrder = { ...packingOrder };
-    setPackingOrder(updatedOrder);
-    saveSessionOrder(updatedOrder);
+    persistPackingOrder({ ...packingOrder });
     setSelectedPalletId(newPallet.palletId);
     showToast("✓ Pallet Created", `${newPallet.palletId}`, "success");
   };
@@ -259,18 +291,14 @@ export default function PackingPage() {
   const handleAddBoxToPallet = (palletId: string, boxId: string) => {
     if (!packingOrder || !packingOrder.pallets) return;
     addBoxToPallet(packingOrder, palletId, boxId);
-    const updatedOrder = { ...packingOrder };
-    setPackingOrder(updatedOrder);
-    saveSessionOrder(updatedOrder);
+    persistPackingOrder({ ...packingOrder });
     showToast("✓ Box Assigned", `${boxId} → ${palletId}`, "success");
   };
 
   const handleRemoveBoxFromPallet = (palletId: string, boxId: string) => {
     if (!packingOrder || !packingOrder.pallets) return;
     removeBoxFromPallet(packingOrder, palletId, boxId);
-    const updatedOrder = { ...packingOrder };
-    setPackingOrder(updatedOrder);
-    saveSessionOrder(updatedOrder);
+    persistPackingOrder({ ...packingOrder });
     showToast("✓ Box Removed", `${boxId} removed from ${palletId}`, "success");
   };
 
@@ -280,9 +308,7 @@ export default function PackingPage() {
       return;
     }
     renameBox(packingOrder, boxId, editingBoxName);
-    const updatedOrder = { ...packingOrder };
-    setPackingOrder(updatedOrder);
-    saveSessionOrder(updatedOrder);
+    persistPackingOrder({ ...packingOrder });
     showToast("✓ Box Renamed", `${boxId} → ${editingBoxName}`, "success");
     setEditingBoxId(null);
     setEditingBoxName("");
@@ -294,9 +320,7 @@ export default function PackingPage() {
       return;
     }
     renamePallet(packingOrder, palletId, editingPalletName);
-    const updatedOrder = { ...packingOrder };
-    setPackingOrder(updatedOrder);
-    saveSessionOrder(updatedOrder);
+    persistPackingOrder({ ...packingOrder });
     showToast("✓ Pallet Renamed", `${palletId} → ${editingPalletName}`, "success");
     setEditingPalletId(null);
     setEditingPalletName("");
@@ -341,20 +365,15 @@ export default function PackingPage() {
       return;
     }
 
-    // Save to history
     setHistory([...history, { boxId: currentBox.boxId, contents: [...currentBox.contents] }]);
     setRedoStack([]);
 
-    // Add to current box (pass packingOrder to update pallet totals)
-    const content = addItemToBox(currentBox, selectedItem, qty, packingOrder);
-
-    if (packingOrder) {
-      const updatedOrder = { ...packingOrder };
-      const boxIndex = updatedOrder.boxes.findIndex((b) => b.boxId === currentBox.boxId);
-      if (boxIndex >= 0) {
-        updatedOrder.boxes[boxIndex] = currentBox;
-        setPackingOrder(updatedOrder);
-        saveSessionOrder(updatedOrder);
+    const updatedOrder = packingOrder ? { ...packingOrder } : null;
+    if (updatedOrder) {
+      const targetBox = updatedOrder.boxes.find((box) => box.boxId === currentBox.boxId);
+      if (targetBox) {
+        addItemToBox(targetBox, selectedItem, qty, updatedOrder);
+        persistPackingOrder(updatedOrder);
       }
     }
 
@@ -379,9 +398,8 @@ export default function PackingPage() {
     if (packingOrder) {
       const newBox = addBox(packingOrder);
       const updatedOrder = { ...packingOrder, boxes: [...packingOrder.boxes, newBox] };
-      setPackingOrder(updatedOrder);
+      const syncedOrder = persistPackingOrder(updatedOrder);
       setCurrentBoxId(newBox.boxId);
-      saveSessionOrder(updatedOrder);
 
       showToast(
         "Box Completed",
@@ -409,9 +427,7 @@ export default function PackingPage() {
     currentBox.totalItems -= lastContent.quantityPacked;
 
     if (packingOrder) {
-      const updatedOrder = { ...packingOrder };
-      setPackingOrder(updatedOrder);
-      saveSessionOrder(updatedOrder);
+      persistPackingOrder({ ...packingOrder });
     }
 
     showToast(
@@ -443,9 +459,7 @@ export default function PackingPage() {
     setRedoStack(updatedRedoStack);
 
     if (packingOrder) {
-      const updatedOrder = { ...packingOrder };
-      setPackingOrder(updatedOrder);
-      saveSessionOrder(updatedOrder);
+      persistPackingOrder({ ...packingOrder });
     }
 
     showToast("Item Restored", "Last undo reversed", "success");
@@ -460,13 +474,8 @@ export default function PackingPage() {
     setRedoStack([]);
 
     const removed = currentBox.contents[itemIndex];
-    
-    // Use the new function that updates pallet totals
     removeItemFromBox(currentBox, itemIndex, packingOrder);
-
-    const updatedOrder = { ...packingOrder };
-    setPackingOrder(updatedOrder);
-    saveSessionOrder(updatedOrder);
+    persistPackingOrder({ ...packingOrder });
 
     showToast("Item Removed", `${removed.itemName} removed from box`, "info");
   };
@@ -518,8 +527,7 @@ export default function PackingPage() {
           ...packingOrder.items.filter((i) => i.sku !== foundItem.sku),
         ];
         const updatedOrder = { ...packingOrder, items: reordered };
-        setPackingOrder(updatedOrder);
-        saveSessionOrder(updatedOrder);
+        persistPackingOrder(updatedOrder);
         setSelectedItem(foundItem);
         // trigger highlight animation on sidebar and auto-scroll/focus
         if (highlightTimerRef.current) {
@@ -558,9 +566,7 @@ export default function PackingPage() {
     }
 
     if (packingOrder) {
-      const updatedOrder = { ...packingOrder };
-      setPackingOrder(updatedOrder);
-      saveSessionOrder(updatedOrder);
+      persistPackingOrder({ ...packingOrder });
     }
 
     showToast(
@@ -600,7 +606,7 @@ export default function PackingPage() {
       savedAt: new Date().toISOString(),
     });
 
-    sessionStorage.removeItem("current_packing_order");
+    clearActivePackingSession();
 
     showToast(
       "Packing Complete",
@@ -666,6 +672,7 @@ export default function PackingPage() {
 
   const currentBox = getCurrentBox();
   const incompleteness = validatePackingComplete(packingOrder);
+  const pendingItems = packingOrder.items.filter((item) => getRemainingQty(item) > 0);
   const completionPercent = Math.round(
     (packingOrder.boxes.reduce((sum, b) => sum + b.totalItems, 0) /
       packingOrder.items.reduce((sum, i) => sum + i.quantity, 0)) *
@@ -997,6 +1004,52 @@ export default function PackingPage() {
                 ))}
               </div>
             </div>
+
+            {/* Current Box Meta */}
+            {currentBox && (
+              <div className="card packing-card">
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+                  <h3 style={{ margin: 0, fontSize: "16px" }}>📐 Box Details</h3>
+                  <span style={{ fontSize: "12px", color: currentBox.isMasterBox ? "#b45309" : "#6b7280" }}>
+                    {currentBox.isMasterBox ? "Master Box" : "Standard Box"}
+                  </span>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: "8px" }}>
+                  {[
+                    { label: "Length", value: currentBox.length ? `${currentBox.length} cm` : "—" },
+                    { label: "Width", value: currentBox.width ? `${currentBox.width} cm` : "—" },
+                    { label: "Height", value: currentBox.height ? `${currentBox.height} cm` : "—" },
+                    { label: "Weight", value: currentBox.weight ? `${currentBox.weight} kg` : "—" },
+                  ].map((meta) => (
+                    <div key={meta.label} style={{ padding: "10px", backgroundColor: "#f8fafc", borderRadius: "8px" }}>
+                      <div style={{ fontSize: "10px", color: "#6b7280", marginBottom: "4px" }}>{meta.label}</div>
+                      <div style={{ fontSize: "13px", fontWeight: "700", color: "#0f172a" }}>{meta.value}</div>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ display: "flex", gap: "8px", marginTop: "12px" }}>
+                  <input type="number" placeholder="Length" value={boxDimensions.length} onChange={(e) => setBoxDimensions({ ...boxDimensions, length: e.target.value })} style={{ flex: 1, padding: "8px", borderRadius: "8px", border: "1px solid #d1d5db" }} />
+                  <input type="number" placeholder="Width" value={boxDimensions.width} onChange={(e) => setBoxDimensions({ ...boxDimensions, width: e.target.value })} style={{ flex: 1, padding: "8px", borderRadius: "8px", border: "1px solid #d1d5db" }} />
+                  <input type="number" placeholder="Height" value={boxDimensions.height} onChange={(e) => setBoxDimensions({ ...boxDimensions, height: e.target.value })} style={{ flex: 1, padding: "8px", borderRadius: "8px", border: "1px solid #d1d5db" }} />
+                  <input type="number" placeholder="Weight" value={boxDimensions.weight} onChange={(e) => setBoxDimensions({ ...boxDimensions, weight: e.target.value })} style={{ flex: 1, padding: "8px", borderRadius: "8px", border: "1px solid #d1d5db" }} />
+                </div>
+                <div style={{ display: "flex", gap: "8px", marginTop: "10px" }}>
+                  <button className="primary-button" onClick={() => {
+                    if (!packingOrder || !currentBox) return;
+                    const updatedBox = { ...currentBox, length: Number(boxDimensions.length) || 0, width: Number(boxDimensions.width) || 0, height: Number(boxDimensions.height) || 0, weight: Number(boxDimensions.weight) || 0, volume: Number((Number(boxDimensions.length || 0) * Number(boxDimensions.width || 0) * Number(boxDimensions.height || 0)).toFixed(2)) };
+                    const updatedOrder = { ...packingOrder, boxes: packingOrder.boxes.map((box) => box.boxId === currentBox.boxId ? updatedBox : box) };
+                    persistPackingOrder(updatedOrder);
+                    showToast("Box Dimensions Updated", "Measurements saved to the active box", "success");
+                  }} style={{ flex: 1 }}>Save Dimensions</button>
+                  <button className="second-button" onClick={() => {
+                    if (!packingOrder || !currentBox) return;
+                    const updatedOrder = { ...packingOrder, boxes: packingOrder.boxes.map((box) => box.boxId === currentBox.boxId ? { ...box, isMasterBox: !box.isMasterBox } : box) };
+                    persistPackingOrder(updatedOrder);
+                    showToast("Master Box Updated", currentBox.isMasterBox ? "Master box removed" : "Master box marked", "success");
+                  }} style={{ flex: 1 }}>{currentBox.isMasterBox ? "Remove Master" : "Mark Master"}</button>
+                </div>
+              </div>
+            )}
 
             {/* Current Box Contents */}
             {currentBox && (
@@ -1507,6 +1560,25 @@ export default function PackingPage() {
               </div>
             </div>
 
+            {/* Pending Items Preview */}
+            <div className="card packing-card">
+              <h4 style={{ margin: "0 0 12px 0", fontSize: "14px", fontWeight: "700" }}>⏳ Pending Items</h4>
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px", maxHeight: "260px", overflowY: "auto" }}>
+                {pendingItems.length === 0 ? (
+                  <div style={{ padding: "10px", backgroundColor: "#f0fdf4", color: "#166534", borderRadius: "8px", fontSize: "12px" }}>All items are packed.</div>
+                ) : pendingItems.map((item) => (
+                  <div key={item.sku} style={{ padding: "10px", borderRadius: "8px", backgroundColor: "#f9fafb", border: "1px solid #e5e7eb" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: "8px", marginBottom: "4px" }}>
+                      <strong style={{ fontSize: "12px" }}>{item.sku}</strong>
+                      <span style={{ fontSize: "11px", color: "#6b7280" }}>{getRemainingQty(item)} left</span>
+                    </div>
+                    <div style={{ fontSize: "11px", color: "#374151" }}>{item.name}</div>
+                    <div style={{ fontSize: "10px", color: "#6b7280", marginTop: "4px" }}>Ordered: {item.quantity} • Packed: {item.packedQty || 0}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
             {/* Statistics */}
             <div className="card packing-card">
               <h4 style={{ margin: "0 0 14px 0", fontSize: "14px", fontWeight: "700" }}>
@@ -1871,9 +1943,28 @@ export default function PackingPage() {
                     {getPalletDisplayName(pallet)}
                   </div>
                   <div style={{ color: "#6b7280", marginTop: "2px" }}>
-                    📦 {pallet.totalBoxes} | 📊 {pallet.totalItems}
+                    📦 {pallet.totalBoxes} | 📊 {pallet.totalItems} | ⚖️ {pallet.totalWeight || 0}kg
                   </div>
                 </div>
+                <button
+                  onClick={() => {
+                    setSelectedPalletForDetails(pallet);
+                    setShowPalletDetailsModal(true);
+                  }}
+                  style={{
+                    padding: "4px 8px",
+                    backgroundColor: "#f0fdf4",
+                    color: "#166534",
+                    border: "none",
+                    borderRadius: "4px",
+                    cursor: "pointer",
+                    fontSize: "11px",
+                    fontWeight: "600",
+                  }}
+                  title="View pallet details"
+                >
+                  👁
+                </button>
                 <button
                   onClick={() => {
                     setEditingPalletId(pallet.palletId);
@@ -1909,6 +2000,56 @@ export default function PackingPage() {
               ⚠️ {packingOrder.boxes.filter((b) => !b.palletId).length} unassigned box(es)
             </div>
           )}
+        </div>
+      )}
+
+      {showPalletDetailsModal && selectedPalletForDetails && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1100, padding: "16px" }} onClick={() => setShowPalletDetailsModal(false)}>
+          <div style={{ background: "white", borderRadius: "12px", width: "100%", maxWidth: "640px", maxHeight: "80vh", overflowY: "auto", padding: "24px", boxShadow: "0 25px 50px rgba(0,0,0,0.2)" }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: "18px" }}>{getPalletDisplayName(selectedPalletForDetails)}</h3>
+                <p style={{ margin: "4px 0 0", color: "#6b7280", fontSize: "13px" }}>Pallet overview and contents</p>
+              </div>
+              <button onClick={() => setShowPalletDetailsModal(false)} style={{ border: "none", background: "#f3f4f6", padding: "8px 12px", borderRadius: "8px", cursor: "pointer" }}>Close</button>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: "8px", marginBottom: "16px" }}>
+              {[
+                { label: "Total Boxes", value: selectedPalletForDetails.totalBoxes },
+                { label: "Total Items", value: selectedPalletForDetails.totalItems },
+                { label: "Weight", value: `${selectedPalletForDetails.totalWeight || 0} kg` },
+                { label: "Volume", value: `${selectedPalletForDetails.totalVolume || 0} m³` },
+              ].map((item) => (
+                <div key={item.label} style={{ background: "#f8fafc", padding: "10px", borderRadius: "8px" }}>
+                  <div style={{ fontSize: "10px", color: "#6b7280", marginBottom: "4px" }}>{item.label}</div>
+                  <div style={{ fontSize: "13px", fontWeight: "700", color: "#0f172a" }}>{item.value}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+              {selectedPalletForDetails.boxIds.map((boxId) => {
+                const box = packingOrder?.boxes.find((item) => item.boxId === boxId);
+                if (!box) return null;
+                return (
+                  <div key={boxId} style={{ border: "1px solid #e5e7eb", borderRadius: "10px", padding: "12px", background: "#f9fafb" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                      <strong>{getBoxDisplayName(box)}</strong>
+                      <button onClick={() => { handleRemoveBoxFromPallet(selectedPalletForDetails.palletId, box.boxId); }} style={{ padding: "6px 10px", borderRadius: "6px", border: "none", background: "#fee2e2", color: "#991b1b", cursor: "pointer", fontSize: "11px" }}>Remove</button>
+                    </div>
+                    <div style={{ fontSize: "12px", color: "#6b7280", marginBottom: "8px" }}>Items: {box.contents.length} • Weight: {box.weight || 0} kg • Volume: {box.volume || 0} m³</div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                      {box.contents.map((content, index) => (
+                        <div key={`${box.boxId}-${index}`} style={{ background: "white", borderRadius: "8px", padding: "8px", fontSize: "12px" }}>
+                          <div style={{ fontWeight: "600" }}>{content.itemSku} — {content.itemName}</div>
+                          <div style={{ color: "#6b7280", marginTop: "2px" }}>Qty: {content.quantityPacked} {content.uom}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
       )}
 

@@ -8,6 +8,8 @@ import NotificationModal from "../../components/NotificationModal";
 import {
   createPackingOrder,
   generateBoxId,
+  saveActivePackingSession,
+  clearActivePackingSession,
   type PackingItem,
   type BoxIdType,
   parsePackingListExcel,
@@ -145,8 +147,9 @@ export default function NewPackingOrderPage() {
     boxIdType
   );
 
-  // Save and navigate
-  sessionStorage.setItem("current_packing_order", JSON.stringify(packingOrder));
+  // Save and navigate using the same session persistence layer as the packing page
+  clearActivePackingSession();
+  saveActivePackingSession(packingOrder);
 
   router.push("/packing/pack");
 };

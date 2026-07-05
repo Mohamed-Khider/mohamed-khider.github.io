@@ -7,10 +7,10 @@ const {
   setDefaultPrinterAsync,
 } = require("./printer-core");
 
-// const HOST = process.env.WAREHOUSE_PRINT_SERVICE_HOST || "localhost";
-const HOST =  "localhost";
-// const PORT = Number(`process.env.WAREHOUSE_PRINT_SERVICE_PORT` || 1995);
-const PORT = Number(1995);
+const HOST = process.env.WAREHOUSE_PRINT_SERVICE_HOST || "localhost";
+// const HOST =  "localhost";
+ const PORT = Number(`process.env.WAREHOUSE_PRINT_SERVICE_PORT` || 1995);
+// const PORT = Number(1995);
 const SERVICE_NAME = "warehouse-local-print-service";
 
 function sendJson(res, statusCode, payload) {

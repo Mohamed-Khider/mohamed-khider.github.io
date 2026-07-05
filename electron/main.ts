@@ -8,7 +8,7 @@ import { printerService } from './services/PrinterService';
 
 
 let mainWindow: BrowserWindow | null = null;
-const PORT = 3000;
+const PORT = 1992;
 
 function createWindow() {
       const isDev = !app.isPackaged;

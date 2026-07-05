@@ -102,8 +102,8 @@ function sendRawZplToPrinter(printerName, zpl) {
 
   const script = String.raw`
 param(
-  [string]$PrinterName,
-  [string]$Base64Zpl
+  [string]${printerName},
+  [string]${Base64Zpl}
 )
 
 $source = @"
@@ -148,7 +148,7 @@ public class RawPrinterHelper
     docInfo.pDocName = "ZPL Label";
     docInfo.pDataType = "RAW";
 
-    if (!OpenPrinter(printerName.Normalize(), out printerHandle, IntPtr.Zero)) return false;
+    if (!OpenPrinter(${printerName.Normalize()}, out printerHandle, IntPtr.Zero)) return false;
 
     bool success = false;
     if (StartDocPrinter(printerHandle, 1, docInfo))

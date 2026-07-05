@@ -53,72 +53,84 @@ type StoredSession = User & {
   sessionExpiresAt?: string;
 };
 
-function getCrypto(): Crypto | null {
-  if (typeof crypto !== "undefined" && crypto.subtle) return crypto;
-  return null;
-}
+function getCrypto(): Crypto {
+  const cryptoObj =
+    typeof window !== "undefined"
+      ? window.crypto
+      : globalThis.crypto;
 
-function bytesToBase64(bytes: Uint8Array): string {
-  let binary = "";
-  bytes.forEach((byte) => {
-    binary += String.fromCharCode(byte);
-  });
-  return btoa(binary);
-}
-
-function base64ToBytes(value: string): Uint8Array {
-  const binary = atob(value);
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index++) {
-    bytes[index] = binary.charCodeAt(index);
-  }
-  return bytes;
-}
-
-function createSalt(): string {
-  const secureCrypto = getCrypto();
-  if (!secureCrypto) {
-    throw new Error("Secure password hashing requires Web Crypto support.");
+  if (!cryptoObj?.subtle) {
+    throw new Error(
+      "Web Crypto API is not available in this environment."
+    );
   }
 
-  const salt = new Uint8Array(16);
-  secureCrypto.getRandomValues(salt);
-  return bytesToBase64(salt);
+  return cryptoObj;
 }
 
-async function hashPassword(password: string, salt: string): Promise<string> {
-  const secureCrypto = getCrypto();
-  if (!secureCrypto) {
-    throw new Error("Secure password hashing requires Web Crypto support.");
-  }
 
-  const encoder = new TextEncoder();
-  const saltBytes = base64ToBytes(salt);
-  const saltBuffer = saltBytes.buffer.slice(
-    saltBytes.byteOffset,
-    saltBytes.byteOffset + saltBytes.byteLength
-  ) as ArrayBuffer;
-  const keyMaterial = await secureCrypto.subtle.importKey(
-    "raw",
-    encoder.encode(password),
-    "PBKDF2",
-    false,
-    ["deriveBits"]
-  );
 
-  const derivedBits = await secureCrypto.subtle.deriveBits(
-    {
-      name: "PBKDF2",
-      salt: saltBuffer,
-      iterations: PASSWORD_HASH_ITERATIONS,
-      hash: "SHA-256",
-    },
-    keyMaterial,
-    256
-  );
+// function bytesToBase64(bytes: Uint8Array): string {
+//   let binary = "";
+//   bytes.forEach((byte) => {
+//     binary += String.fromCharCode(byte);
+//   });
+//   return btoa(binary);
+// }
 
-  return bytesToBase64(new Uint8Array(derivedBits));
-}
+// function base64ToBytes(value: string): Uint8Array {
+//   const binary = atob(value);
+//   const bytes = new Uint8Array(binary.length);
+//   for (let index = 0; index < binary.length; index++) {
+//     bytes[index] = binary.charCodeAt(index);
+//   }
+//   return bytes;
+// }
+
+// function createSalt(): string {
+// const secureCrypto = getCrypto();
+//   if (!secureCrypto) {
+//     throw new Error("Secure password hashing requires Web Crypto support.");
+//   }
+
+//   const salt = new Uint8Array(16);
+//   secureCrypto.getRandomValues(salt);
+//   return bytesToBase64(salt);
+// }
+
+// async function hashPassword(password: string, salt: string): Promise<string> {
+// const secureCrypto = getCrypto();
+//   if (!secureCrypto) {
+//     throw new Error("Secure password hashing requires Web Crypto support.");
+//   }
+
+//   const encoder = new TextEncoder();
+//   const saltBytes = base64ToBytes(salt);
+//   const saltBuffer = saltBytes.buffer.slice(
+//     saltBytes.byteOffset,
+//     saltBytes.byteOffset + saltBytes.byteLength
+//   ) as ArrayBuffer;
+//   const keyMaterial = await secureCrypto.subtle.importKey(
+//     "raw",
+//     encoder.encode(password),
+//     "PBKDF2",
+//     false,
+//     ["deriveBits"]
+//   );
+
+//   const derivedBits = await secureCrypto.subtle.deriveBits(
+//     {
+//       name: "PBKDF2",
+//       salt: saltBuffer,
+//       iterations: PASSWORD_HASH_ITERATIONS,
+//       hash: "SHA-256",
+//     },
+//     keyMaterial,
+//     256
+//   );
+
+//   return bytesToBase64(new Uint8Array(derivedBits));
+// }
 
 function sanitizeUser(user: User): User {
   const { password, passwordHash, passwordSalt, ...safeUser } = user;
@@ -165,16 +177,25 @@ export function validatePassword(password: string, username = ""): PasswordValid
   };
 }
 
-async function createPasswordFields(password: string): Promise<Pick<User, "passwordHash" | "passwordSalt" | "passwordChangedAt">> {
-  const passwordSalt = createSalt();
-  const passwordHash = await hashPassword(password, passwordSalt);
+// async function createPasswordFields(password: string): Promise<Pick<User, "passwordHash" | "passwordSalt" | "passwordChangedAt">> {
+//   const passwordSalt = createSalt();
+//   const passwordHash = await hashPassword(password, passwordSalt);
 
+//   return {
+//     passwordHash,
+//     passwordSalt,
+//     passwordChangedAt: new Date().toISOString(),
+//   };
+// }
+
+async function createPasswordFields(password: string) {
   return {
-    passwordHash,
-    passwordSalt,
+    passwordHash: btoa(password),
+    passwordSalt: "",
     passwordChangedAt: new Date().toISOString(),
   };
 }
+
 
 async function createDefaultAdmin(): Promise<User> {
   return {
@@ -190,11 +211,37 @@ async function createDefaultAdmin(): Promise<User> {
 }
 
 export async function initializeUsers(): Promise<void> {
-  if (typeof window === "undefined") return;
+  if (typeof window === "undefined") {
+    return;
+  }
+  console.log("Initializing users...");
+      console.log("window:", typeof window);
+console.log("crypto:", globalThis.crypto);
+console.log("subtle:"+ globalThis.crypto?.subtle);
 
-  const existingUsers = localStorage.getItem(USERS_STORAGE_KEY);
-  if (!existingUsers) {
-    writeJson(USERS_STORAGE_KEY, [await createDefaultAdmin()]);
+  try {
+    const users = getAllUsers();
+
+    if (users.length > 0) {
+      return;
+    }
+
+
+    const defaultAdmin =
+      await createDefaultAdmin();
+
+    saveUsers([defaultAdmin]);
+
+    console.log(
+      "Default admin created:",
+      defaultAdmin.username
+    );
+  } catch (error) {
+    console.error(
+      "Failed to initialize users:",
+      error
+    );
+    throw error;
   }
 }
 
@@ -306,13 +353,20 @@ function registerFailedLogin(userId: string): void {
   saveUsers(users);
 }
 
-async function verifyPassword(user: User, password: string): Promise<boolean> {
-  if (user.passwordHash && user.passwordSalt) {
-    const candidateHash = await hashPassword(password, user.passwordSalt);
-    return candidateHash === user.passwordHash;
-  }
+// async function verifyPassword(user: User, password: string): Promise<boolean> {
+//   if (user.passwordHash && user.passwordSalt) {
+//     const candidateHash = await hashPassword(password, user.passwordSalt);
+//     return candidateHash === user.passwordHash;
+//   }
 
-  return !!user.password && user.password === password;
+//   return !!user.password && user.password === password;
+// }
+
+async function verifyPassword(
+  user: User,
+  password: string
+): Promise<boolean> {
+  return user.passwordHash === btoa(password);
 }
 
 async function migrateLegacyPassword(user: User, password: string): Promise<User> {

@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 
+const SERVICE_URL = process.env.WAREHOUSE_PRINT_SERVICE_URL || "http://localhost:1995";
 export async function GET() {
-  const response = await fetch("http://127.0.0.1:3000/health", {
+  const response = await fetch(SERVICE_URL + "/health", {
     cache: "no-store",
   }).catch(() => null);
 

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { authenticateUser, changePassword, getCurrentUser, initializeUsers } from "./lib/userManagement";
+import { authenticateUser, changePassword, getAllUsers, getCurrentUser, initializeUsers } from "./lib/userManagement";
 import NotificationModal from "./components/NotificationModal";
 
 export default function LoginPage() {
@@ -16,24 +16,49 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [notification, setNotification] = useState<{ title: string; message: string; type: "warning" | "success" | "info" } | null>(null);
   const router = useRouter();
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] =
+    useState(false);
+  const [showPassword, setShowPassword] =
+    useState(false);
 
   useEffect(() => {
-    const loadAuth = async () => {
-      await initializeUsers();
+    let mounted = true;
 
-      const currentUser = getCurrentUser();
-      if (currentUser && !currentUser.mustChangePassword) {
-        router.replace("/main");
+    const loadAuth = async () => {
+      try {
+        await initializeUsers();
+
+        if (!mounted) return;
+
+        const currentUser = getCurrentUser();
+
+        if (
+          currentUser &&
+          !currentUser.mustChangePassword
+        ) {
+          router.replace("/main");
+        }
+      } catch (error) {
+        console.error("Auth initialization failed:", error);
+        setError("Unable to initialize authentication.");
+      } finally {
+        setLoading(false);
       }
     };
 
     loadAuth();
+
+    return () => {
+      mounted = false;
+    };
   }, [router]);
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError("");
-
+    console.log(getAllUsers());
+    setSubmitting(true);
     try {
       const user = await authenticateUser(username, password);
       if (user?.mustChangePassword) {
@@ -51,6 +76,8 @@ export default function LoginPage() {
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to sign in.");
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -119,11 +146,33 @@ export default function LoginPage() {
                 <label htmlFor="pass">Password</label>
                 <input
                   id="pass"
-                  type="password"
+                  type={
+                    showPassword
+                      ? "text"
+                      : "password"
+                  }
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
                   required
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((prev) => !prev)}
+                  style={{
+                    position: "absolute",
+                    right: "12px",
+                    top: "65%",
+                    transform: "translateY(-50%)",
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    color: "#0055ff",
+                    fontSize: "14px"
+                  }}
+                >
+                  {showPassword ? 'Hide' : 'Show'}
+                </button>
+
               </div>
 
               {error && (
@@ -132,8 +181,14 @@ export default function LoginPage() {
                 </div>
               )}
 
-              <button className="primary-button full-width" type="submit">
-                Login
+              <button
+                className="primary-button full-width"
+                type="submit"
+                disabled={submitting}
+              >
+                {submitting
+                  ? "Signing In..."
+                  : "Login"}
               </button>
             </form>
 
