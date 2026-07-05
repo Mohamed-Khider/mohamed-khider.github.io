@@ -1,9 +1,10 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { getCurrentUser, hasPermission, logoutUser } from "../lib/userManagement";
 import PrinterManagerButton from "./PrinterManagerButton";
+import Icon from "./Icon";
 
 interface AppShellProps {
   children: ReactNode;
@@ -41,6 +42,8 @@ export default function AppShell({ children }: AppShellProps) {
   const pathname = usePathname();
   const currentUser = getCurrentUser();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
 
   const visibleItems = useMemo(() => {
     return NAV_ITEMS.filter((item) => {
@@ -60,6 +63,44 @@ export default function AppShell({ children }: AppShellProps) {
     );
   }, [visibleItems]);
 
+  useEffect(() => {
+    const updateViewport = () => {
+      const mobile = window.innerWidth < 1024;
+      setIsMobile(mobile);
+      if (mobile) {
+        setCollapsed(false);
+      }
+    };
+
+    updateViewport();
+    window.addEventListener("resize", updateViewport);
+    return () => window.removeEventListener("resize", updateViewport);
+  }, []);
+
+  useEffect(() => {
+    const saved = window.localStorage.getItem("warehouse-sidebar-collapsed");
+    if (saved) {
+      setCollapsed(saved === "true");
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isMobile) {
+      window.localStorage.setItem("warehouse-sidebar-collapsed", String(collapsed));
+    }
+  }, [collapsed, isMobile]);
+
+  useEffect(() => {
+    if (!drawerOpen) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setDrawerOpen(false);
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [drawerOpen]);
+
   const navigate = (href: string) => {
     setDrawerOpen(false);
     router.push(href);
@@ -72,12 +113,24 @@ export default function AppShell({ children }: AppShellProps) {
 
   return (
     <div className="app-shell">
-      <aside className={`side-drawer ${drawerOpen ? "open" : ""}`}>
+      <aside className={`side-drawer ${collapsed && !isMobile ? "collapsed" : ""} ${drawerOpen ? "open" : ""}`}>
         <div className="drawer-brand">
-          <div className="brand-mark">
-            <span className="material-symbols-outlined">warehouse</span>
-          </div>
-          <div>
+          <button
+            className="brand-toggle"
+            type="button"
+            onClick={() => {
+              if (isMobile) {
+                setDrawerOpen(false);
+              } else {
+                setCollapsed((value) => !value);
+              }
+            }}
+            aria-label={collapsed && !isMobile ? "Expand navigation" : "Collapse navigation"}
+            title={collapsed && !isMobile ? "Expand navigation" : "Collapse navigation"}
+          >
+            <Icon name={collapsed && !isMobile ? "chevron_right" : "chevron_left"} size={18} />
+          </button>
+          <div className="brand-copy">
             <strong>Warehouse OS</strong>
             <span>WMS Console</span>
           </div>
@@ -87,7 +140,7 @@ export default function AppShell({ children }: AppShellProps) {
           {(Object.keys(groups) as Array<NavItem["group"]>).map((group) => (
             groups[group].length > 0 && (
               <div className="drawer-group" key={group}>
-                <div className="drawer-group-title">{group}</div>
+                {!collapsed || isMobile ? <div className="drawer-group-title">{group}</div> : null}
                 {groups[group].map((item) => {
                   const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
                   return (
@@ -96,9 +149,12 @@ export default function AppShell({ children }: AppShellProps) {
                       key={item.href}
                       onClick={() => navigate(item.href)}
                       type="button"
+                      title={collapsed && !isMobile ? item.label : undefined}
                     >
-                      <span className="material-symbols-outlined">{item.icon}</span>
-                      <span>{item.label}</span>
+                      <span className="drawer-icon-wrap">
+                        <Icon name={item.icon} size={20} />
+                      </span>
+                      {!collapsed || isMobile ? <span className="drawer-link-label">{item.label}</span> : null}
                     </button>
                   );
                 })}
@@ -108,12 +164,12 @@ export default function AppShell({ children }: AppShellProps) {
         </nav>
 
         <div className="drawer-user">
-          <div>
+          <div className="drawer-user-copy">
             <strong>{currentUser?.username ?? "Operator"}</strong>
             <span>{currentUser?.role ?? "user"}</span>
           </div>
           <button type="button" onClick={handleLogout} title="Logout" aria-label="Logout">
-            <span className="material-symbols-outlined">logout</span>
+            <Icon name="logout" size={18} />
           </button>
         </div>
       </aside>
@@ -123,10 +179,10 @@ export default function AppShell({ children }: AppShellProps) {
       <div className="app-main">
         <header className="topbar">
           <button className="drawer-toggle" type="button" onClick={() => setDrawerOpen(true)} aria-label="Open menu">
-            <span className="material-symbols-outlined">menu</span>
+            <Icon name="menu" size={20} />
           </button>
           <div className="topbar-search">
-            <span className="material-symbols-outlined">search</span>
+            <Icon name="search" size={18} />
             <span>Scan, receive, move, pack, print</span>
           </div>
           <div className="topbar-status">

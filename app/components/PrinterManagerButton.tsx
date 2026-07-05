@@ -10,6 +10,7 @@ import {
   updatePrinterProfile,
 } from "../lib/labelManagement";
 import { fetchLocalFirst, fetchLocalPrintService } from "../lib/localPrintBridge";
+import Icon from "./Icon";
 
 interface SystemPrinter {
   Name: string;
@@ -174,7 +175,7 @@ export default function PrinterManagerButton() {
         title="Printer management"
         aria-label="Printer management"
       >
-        <span className="material-symbols-outlined">print</span>
+        <Icon name="print" size={20} />
         <span className="printer-manager-label">{displayName}</span>
       </button>
 
@@ -190,21 +191,21 @@ export default function PrinterManagerButton() {
               </span>
             </div>
             <button type="button" onClick={() => setOpen(false)} aria-label="Close printer management">
-              <span className="material-symbols-outlined">close</span>
+              <Icon name="close" size={18} />
             </button>
           </div>
 
           <div className="printer-actions">
             <button className="ghost-button" type="button" onClick={loadPrinters} disabled={loading}>
-              <span className="material-symbols-outlined">refresh</span>
+              <Icon name="refresh" size={18} />
               {loading ? "Loading" : "Load"}
             </button>
             <button className="ghost-button" type="button" onClick={requestUsbAccess}>
-              <span className="material-symbols-outlined">usb</span>
+              <Icon name="usb" size={18} />
               USB Access
             </button>
             <button className="ghost-button" type="button" onClick={requestServiceInstall} disabled={loading || serviceRunning}>
-              <span className="material-symbols-outlined">admin_panel_settings</span>
+              <Icon name="admin_panel_settings" size={18} />
               Service
             </button>
           </div>
@@ -225,7 +226,7 @@ export default function PrinterManagerButton() {
                     onClick={() => selectSystemPrinter(printer.Name)}
                     disabled={loading}
                   >
-                    <span className="material-symbols-outlined">{isDefault ? "check_circle" : "print"}</span>
+                    <Icon name={isDefault ? "check_circle" : "print"} size={18} />
                     <span>
                       <strong>{printer.Name}</strong>
                       <small>{printer.DriverName || printer.PortName || "Windows printer"}</small>

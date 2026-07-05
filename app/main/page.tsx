@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import ProtectedPage from "../components/ProtectedPage";
+import Icon from "../components/Icon";
 import {
   getAdjustmentHistory,
   getInventoryItems,
@@ -151,7 +152,7 @@ const refreshDashboard = () => {
             <p>Track inventory, move stock, pack orders, and print Zebra-ready labels from one control surface.</p>
           </div>
           <div className="hero-status-panel">
-            <span className="material-symbols-outlined">verified</span>
+            <Icon name="verified" size={22} />
             <div>
               <strong>
   {items.length > 0
@@ -169,37 +170,35 @@ const refreshDashboard = () => {
 
         <section className="metric-grid">
           <div className="metric-card">
-            <span className="material-symbols-outlined">inventory_2</span>
+            <Icon name="inventory_2" size={22} />
             <div>
               <strong>{stockSummary.length}</strong>
               <span>Active SKUs</span>
             </div>
           </div>
           <div className="metric-card">
-            <span className="material-symbols-outlined">pin_drop</span>
+            <Icon name="pin_drop" size={22} />
             <div>
               <strong>{locationCount}</strong>
               <span>Active locations</span>
             </div>
           </div>
           <div className="metric-card">
-            <span className="material-symbols-outlined">tag</span>
+            <Icon name="tag" size={22} />
             <div>
               <strong>{totalUnits}</strong>
               <span>Units on hand</span>
             </div>
           </div>
           <div className="metric-card alert">
-            <span className="material-symbols-outlined">priority_high</span>
+            <Icon name="priority_high" size={22} />
             <div>
               <strong>{lowStock.length}</strong>
               <span>Low stock SKUs</span>
             </div>
           </div>
           <div className="metric-card">
-  <span className="material-symbols-outlined">
-    package_2
-  </span>
+  <Icon name="package_2" size={22} />
 
   <div>
     <strong>{packingCount}</strong>
@@ -208,9 +207,7 @@ const refreshDashboard = () => {
 </div>
 
 <div className="metric-card">
-  <span className="material-symbols-outlined">
-    warning
-  </span>
+  <Icon name="warning" size={22} />
 
   <div>
     <strong>{unassigned.length}</strong>
@@ -230,7 +227,7 @@ const refreshDashboard = () => {
             <div className="quick-action-grid">
               {quickActions.map((action) => (
                 <button className="quick-action" key={action.href} type="button" onClick={() => router.push(action.href)}>
-                  <span className="material-symbols-outlined">{action.icon}</span>
+                  <Icon name={action.icon as any} size={22} />
                   <strong>{action.label}</strong>
                   <small>{action.description}</small>
                 </button>
@@ -272,7 +269,7 @@ const refreshDashboard = () => {
             <div className="activity-list">
               {activity.length > 0 ? activity.map((item, index) => (
                 <div className="activity-row" key={`${item.label}-${item.when}-${index}`}>
-                  <span className="material-symbols-outlined">{item.icon}</span>
+                  <Icon name={item.icon as any} size={20} />
                   <div>
                     <strong>{item.label}</strong>
                     <p>{item.detail}</p>
@@ -300,7 +297,7 @@ const refreshDashboard = () => {
                 .filter((module) => module.href !== "/admin" || currentUser?.role === "admin")
                 .map((module) => (
                   <button className={`module-link ${module.tone}`} key={module.href} type="button" onClick={() => router.push(module.href)}>
-                    <span className="material-symbols-outlined">{module.icon}</span>
+                    <Icon name={module.icon as any} size={20} />
                     <span>{module.label}</span>
                   </button>
                 ))}
