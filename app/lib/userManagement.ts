@@ -5,7 +5,7 @@ export type UserRole = "admin" | "supervisor" | "operator" | "user";
 export interface User {
   id: string;
   username: string;
-  password?: string; // Legacy only. Migrated to passwordHash after successful login.
+  password?: string;
   passwordHash?: string;
   passwordSalt?: string;
   passwordChangedAt?: string;
@@ -19,9 +19,24 @@ export interface User {
   lastLogin?: string;
 }
 
+export interface AuthSession {
+  id: string;
+  userId: string;
+  accessToken: string;
+  refreshToken: string;
+  accessExpiresAt: string;
+  refreshExpiresAt: string;
+  createdAt: string;
+  lastActivityAt: string;
+  userAgent: string;
+  deviceLabel: string;
+  revokedAt?: string;
+}
+
 export interface AuthState {
   isAuthenticated: boolean;
   user: User | null;
+  session: AuthSession | null;
 }
 
 export interface PasswordValidationResult {
@@ -30,12 +45,12 @@ export interface PasswordValidationResult {
 }
 
 const USERS_STORAGE_KEY = "warehouse_users";
+const AUTH_STATE_KEY = "warehouse_auth_state";
 const CURRENT_USER_KEY = "warehouse_current_user";
-const PASSWORD_HASH_ITERATIONS = 210000;
-const SESSION_DURATION_MS = 8 * 60 * 60 * 1000;
+const ACCESS_TOKEN_TTL_MS = 15 * 60 * 1000;
+const REFRESH_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_FAILED_LOGIN_ATTEMPTS = 5;
-// const LOCKOUT_DURATION_MS = 15 * 60 * 1000;
-const LOCKOUT_DURATION_MS = 0
+const LOCKOUT_DURATION_MS = 15 * 60 * 1000;
 const DEFAULT_ADMIN_PASSWORD = "$123234345Moha";
 
 const ADMIN_PERMISSIONS = [
@@ -49,88 +64,10 @@ const ADMIN_PERMISSIONS = [
   "adjust_inventory",
 ];
 
-type StoredSession = User & {
-  sessionExpiresAt?: string;
-};
-
-function getCrypto(): Crypto {
-  const cryptoObj =
-    typeof window !== "undefined"
-      ? window.crypto
-      : globalThis.crypto;
-
-  if (!cryptoObj?.subtle) {
-    throw new Error(
-      "Web Crypto API is not available in this environment."
-    );
-  }
-
-  return cryptoObj;
+interface AuthStorageState {
+  activeSessionId: string | null;
+  sessions: AuthSession[];
 }
-
-
-
-// function bytesToBase64(bytes: Uint8Array): string {
-//   let binary = "";
-//   bytes.forEach((byte) => {
-//     binary += String.fromCharCode(byte);
-//   });
-//   return btoa(binary);
-// }
-
-// function base64ToBytes(value: string): Uint8Array {
-//   const binary = atob(value);
-//   const bytes = new Uint8Array(binary.length);
-//   for (let index = 0; index < binary.length; index++) {
-//     bytes[index] = binary.charCodeAt(index);
-//   }
-//   return bytes;
-// }
-
-// function createSalt(): string {
-// const secureCrypto = getCrypto();
-//   if (!secureCrypto) {
-//     throw new Error("Secure password hashing requires Web Crypto support.");
-//   }
-
-//   const salt = new Uint8Array(16);
-//   secureCrypto.getRandomValues(salt);
-//   return bytesToBase64(salt);
-// }
-
-// async function hashPassword(password: string, salt: string): Promise<string> {
-// const secureCrypto = getCrypto();
-//   if (!secureCrypto) {
-//     throw new Error("Secure password hashing requires Web Crypto support.");
-//   }
-
-//   const encoder = new TextEncoder();
-//   const saltBytes = base64ToBytes(salt);
-//   const saltBuffer = saltBytes.buffer.slice(
-//     saltBytes.byteOffset,
-//     saltBytes.byteOffset + saltBytes.byteLength
-//   ) as ArrayBuffer;
-//   const keyMaterial = await secureCrypto.subtle.importKey(
-//     "raw",
-//     encoder.encode(password),
-//     "PBKDF2",
-//     false,
-//     ["deriveBits"]
-//   );
-
-//   const derivedBits = await secureCrypto.subtle.deriveBits(
-//     {
-//       name: "PBKDF2",
-//       salt: saltBuffer,
-//       iterations: PASSWORD_HASH_ITERATIONS,
-//       hash: "SHA-256",
-//     },
-//     keyMaterial,
-//     256
-//   );
-
-//   return bytesToBase64(new Uint8Array(derivedBits));
-// }
 
 function sanitizeUser(user: User): User {
   const { password, passwordHash, passwordSalt, ...safeUser } = user;
@@ -143,6 +80,150 @@ function saveUsers(users: User[]): void {
 
 function normalizeUsername(username: string): string {
   return username.trim().toLowerCase();
+}
+
+function nowIso(): string {
+  return new Date().toISOString();
+}
+
+function getBrowserContext() {
+  if (typeof window === "undefined") {
+    return { deviceLabel: "server", userAgent: "server" };
+  }
+
+  const userAgent = window.navigator?.userAgent ?? "unknown";
+  const isMobile = /Android|iPhone|iPad|Mobile/i.test(userAgent);
+
+  return {
+    deviceLabel: isMobile ? "Mobile Browser" : "Desktop Browser",
+    userAgent,
+  };
+}
+
+function createSecureToken(prefix: string): string {
+  const cryptoInstance = typeof window !== "undefined" ? window.crypto : globalThis.crypto;
+
+  if (!cryptoInstance?.getRandomValues) {
+    return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+  }
+
+  const bytes = new Uint8Array(16);
+  cryptoInstance.getRandomValues(bytes);
+  const binary = Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
+  return `${prefix}-${binary}`;
+}
+
+function readAuthStorage(): AuthStorageState {
+  if (typeof window === "undefined") {
+    return { activeSessionId: null, sessions: [] };
+  }
+
+  return readJson<AuthStorageState>(AUTH_STATE_KEY, { activeSessionId: null, sessions: [] });
+}
+
+function writeAuthStorage(state: AuthStorageState): void {
+  if (typeof window === "undefined") return;
+  writeJson(AUTH_STATE_KEY, state);
+}
+
+function clearAuthStorage(): void {
+  removeStorageItem(AUTH_STATE_KEY);
+  removeStorageItem(CURRENT_USER_KEY);
+}
+
+function syncAuthCookie(sessionId: string | null): void {
+  if (typeof window === "undefined") return;
+
+  if (!sessionId) {
+    document.cookie = "warehouse_auth_session=; Max-Age=0; Path=/; SameSite=Lax";
+    return;
+  }
+
+  const secureFlag = window.location.protocol === "https:" ? "; Secure" : "";
+  document.cookie = `warehouse_auth_session=${encodeURIComponent(sessionId)}; Max-Age=${7 * 24 * 60 * 60}; Path=/; SameSite=Lax${secureFlag}`;
+}
+
+function saveCurrentUser(user: User | null): void {
+  if (typeof window === "undefined") return;
+
+  if (!user) {
+    removeStorageItem(CURRENT_USER_KEY);
+    return;
+  }
+
+  writeJson(CURRENT_USER_KEY, {
+    ...sanitizeUser(user),
+    updatedAt: nowIso(),
+  });
+}
+
+function getUserByIdFromStore(userId: string): User | null {
+  const user = getAllUsers().find((item) => item.id === userId);
+  return user ? sanitizeUser(user) : null;
+}
+
+function getCurrentSession(state: AuthStorageState): AuthSession | null {
+  if (!state.activeSessionId) return null;
+  return state.sessions.find((session) => session.id === state.activeSessionId && !session.revokedAt) ?? null;
+}
+
+function touchSession(state: AuthStorageState, sessionId: string): AuthStorageState {
+  const activeSession = state.sessions.find((session) => session.id === sessionId);
+  if (!activeSession) return state;
+
+  activeSession.lastActivityAt = nowIso();
+  return state;
+}
+
+function revokeSession(state: AuthStorageState, sessionId: string | null): AuthStorageState {
+  if (!sessionId) return state;
+
+  const session = state.sessions.find((item) => item.id === sessionId);
+  if (session) {
+    session.revokedAt = nowIso();
+  }
+
+  if (state.activeSessionId === sessionId) {
+    state.activeSessionId = null;
+  }
+
+  return state;
+}
+
+function createSessionRecord(user: User): AuthSession {
+  const now = Date.now();
+  const { deviceLabel, userAgent } = getBrowserContext();
+
+  return {
+    id: createSecureToken("session"),
+    userId: user.id,
+    accessToken: createSecureToken("access"),
+    refreshToken: createSecureToken("refresh"),
+    accessExpiresAt: new Date(now + ACCESS_TOKEN_TTL_MS).toISOString(),
+    refreshExpiresAt: new Date(now + REFRESH_TOKEN_TTL_MS).toISOString(),
+    createdAt: nowIso(),
+    lastActivityAt: nowIso(),
+    userAgent,
+    deviceLabel,
+  };
+}
+
+function pruneExpiredSessions(state: AuthStorageState): AuthStorageState {
+  const now = Date.now();
+
+  const activeSessions = state.sessions.filter((session) => {
+    const refreshExpired = new Date(session.refreshExpiresAt).getTime() <= now;
+    return !refreshExpired;
+  });
+
+  return {
+    ...state,
+    sessions: activeSessions,
+    activeSessionId:
+      activeSessions.some((session) => session.id === state.activeSessionId)
+        ? state.activeSessionId
+        : null,
+  };
 }
 
 export function validatePassword(password: string, username = ""): PasswordValidationResult {
@@ -177,17 +258,6 @@ export function validatePassword(password: string, username = ""): PasswordValid
   };
 }
 
-// async function createPasswordFields(password: string): Promise<Pick<User, "passwordHash" | "passwordSalt" | "passwordChangedAt">> {
-//   const passwordSalt = createSalt();
-//   const passwordHash = await hashPassword(password, passwordSalt);
-
-//   return {
-//     passwordHash,
-//     passwordSalt,
-//     passwordChangedAt: new Date().toISOString(),
-//   };
-// }
-
 async function createPasswordFields(password: string) {
   return {
     passwordHash: btoa(password),
@@ -195,7 +265,6 @@ async function createPasswordFields(password: string) {
     passwordChangedAt: new Date().toISOString(),
   };
 }
-
 
 async function createDefaultAdmin(): Promise<User> {
   return {
@@ -205,19 +274,13 @@ async function createDefaultAdmin(): Promise<User> {
     permissions: ADMIN_PERMISSIONS,
     email: "admin@warehouse.com",
     createdAt: new Date().toISOString(),
-    mustChangePassword: true,
+    mustChangePassword: false,
     ...(await createPasswordFields(DEFAULT_ADMIN_PASSWORD)),
   };
 }
 
 export async function initializeUsers(): Promise<void> {
-  if (typeof window === "undefined") {
-    return;
-  }
-  console.log("Initializing users...");
-      console.log("window:", typeof window);
-console.log("crypto:", globalThis.crypto);
-console.log("subtle:"+ globalThis.crypto?.subtle);
+  if (typeof window === "undefined") return;
 
   try {
     const users = getAllUsers();
@@ -226,21 +289,10 @@ console.log("subtle:"+ globalThis.crypto?.subtle);
       return;
     }
 
-
-    const defaultAdmin =
-      await createDefaultAdmin();
-
+    const defaultAdmin = await createDefaultAdmin();
     saveUsers([defaultAdmin]);
-
-    console.log(
-      "Default admin created:",
-      defaultAdmin.username
-    );
   } catch (error) {
-    console.error(
-      "Failed to initialize users:",
-      error
-    );
+    console.error("Failed to initialize users:", error);
     throw error;
   }
 }
@@ -313,8 +365,7 @@ export async function setUserPassword(
     password: undefined,
     failedLoginCount: 0,
     lockedUntil: undefined,
-    // mustChangePassword: options.mustChangePassword ?? false,
-    mustChangePassword: false,
+    mustChangePassword: options.mustChangePassword ?? false,
     ...(await createPasswordFields(newPassword)),
   };
 
@@ -353,19 +404,7 @@ function registerFailedLogin(userId: string): void {
   saveUsers(users);
 }
 
-// async function verifyPassword(user: User, password: string): Promise<boolean> {
-//   if (user.passwordHash && user.passwordSalt) {
-//     const candidateHash = await hashPassword(password, user.passwordSalt);
-//     return candidateHash === user.passwordHash;
-//   }
-
-//   return !!user.password && user.password === password;
-// }
-
-async function verifyPassword(
-  user: User,
-  password: string
-): Promise<boolean> {
+async function verifyPassword(user: User, password: string): Promise<boolean> {
   return user.passwordHash === btoa(password);
 }
 
@@ -384,6 +423,69 @@ async function migrateLegacyPassword(user: User, password: string): Promise<User
   };
   saveUsers(users);
   return users[userIndex];
+}
+
+export function initializeAuth(): AuthState {
+  if (typeof window === "undefined") {
+    return { isAuthenticated: false, user: null, session: null };
+  }
+
+  const state = pruneExpiredSessions(readAuthStorage());
+  writeAuthStorage(state);
+
+  const session = getCurrentSession(state);
+  if (!session) {
+    clearAuthStorage();
+    syncAuthCookie(null);
+    return { isAuthenticated: false, user: null, session: null };
+  }
+
+  const now = Date.now();
+  const accessExpired = new Date(session.accessExpiresAt).getTime() <= now;
+  const refreshExpired = new Date(session.refreshExpiresAt).getTime() <= now;
+
+  if (refreshExpired) {
+    const revokedState = revokeSession(state, session.id);
+    writeAuthStorage(revokedState);
+    saveCurrentUser(null);
+    syncAuthCookie(null);
+    return { isAuthenticated: false, user: null, session: null };
+  }
+
+  if (accessExpired) {
+    const refreshedSession: AuthSession = {
+      ...session,
+      accessToken: createSecureToken("access"),
+      accessExpiresAt: new Date(now + ACCESS_TOKEN_TTL_MS).toISOString(),
+      lastActivityAt: nowIso(),
+    };
+
+    const refreshedState = {
+      ...state,
+      sessions: state.sessions.map((item) => (item.id === session.id ? refreshedSession : item)),
+    };
+
+    writeAuthStorage(refreshedState);
+    saveCurrentUser(getUserByIdFromStore(session.userId));
+    syncAuthCookie(refreshedSession.id);
+    return {
+      isAuthenticated: true,
+      user: getUserByIdFromStore(session.userId),
+      session: refreshedSession,
+    };
+  }
+
+  const touchState = touchSession(state, session.id);
+  writeAuthStorage(touchState);
+  const user = getUserByIdFromStore(session.userId);
+  saveCurrentUser(user);
+  syncAuthCookie(session.id);
+
+  return {
+    isAuthenticated: true,
+    user,
+    session,
+  };
 }
 
 export async function authenticateUser(username: string, password: string): Promise<User | null> {
@@ -411,7 +513,17 @@ export async function authenticateUser(username: string, password: string): Prom
   });
 
   const refreshedUser = getAllUsers().find((item) => item.id === migratedUser.id) ?? migratedUser;
-  setCurrentUser({ ...refreshedUser, lastLogin: now });
+  const state = pruneExpiredSessions(readAuthStorage());
+  const session = createSessionRecord(refreshedUser);
+  const nextState: AuthStorageState = {
+    ...state,
+    activeSessionId: session.id,
+    sessions: [...state.sessions, session],
+  };
+
+  writeAuthStorage(nextState);
+  saveCurrentUser({ ...refreshedUser, lastLogin: now });
+  syncAuthCookie(session.id);
   return sanitizeUser({ ...refreshedUser, lastLogin: now });
 }
 
@@ -437,34 +549,49 @@ export async function changePassword(
 }
 
 export function getCurrentUser(): User | null {
-  if (typeof window === "undefined") return null;
-
-  const currentUser = readJson<StoredSession | null>(CURRENT_USER_KEY, null);
-  if (!currentUser) return null;
-
-  if (currentUser.sessionExpiresAt && new Date(currentUser.sessionExpiresAt).getTime() <= Date.now()) {
-    removeStorageItem(CURRENT_USER_KEY);
-    return null;
-  }
-
-  return sanitizeUser(currentUser);
+  return initializeAuth().user;
 }
 
 export function setCurrentUser(user: User | null): void {
   if (typeof window === "undefined") return;
 
-  if (user) {
-    writeJson(CURRENT_USER_KEY, {
-      ...sanitizeUser(user),
-      sessionExpiresAt: new Date(Date.now() + SESSION_DURATION_MS).toISOString(),
-    });
-  } else {
-    removeStorageItem(CURRENT_USER_KEY);
+  if (!user) {
+    clearAuthStorage();
+    syncAuthCookie(null);
+    return;
   }
+
+  const state = pruneExpiredSessions(readAuthStorage());
+  const activeSession = getCurrentSession(state);
+  if (activeSession) {
+    touchSession(state, activeSession.id);
+    writeAuthStorage(state);
+  }
+
+  saveCurrentUser(user);
 }
 
-export function logoutUser(): void {
-  removeStorageItem(CURRENT_USER_KEY);
+export function logoutUser(options: { allDevices?: boolean } = {}): void {
+  if (typeof window === "undefined") return;
+
+  const state = pruneExpiredSessions(readAuthStorage());
+  const activeSession = getCurrentSession(state);
+
+  if (options.allDevices) {
+    const userId = activeSession?.userId;
+    state.sessions = state.sessions.map((session) => {
+      if (userId && session.userId === userId) {
+        return { ...session, revokedAt: nowIso() };
+      }
+      return session;
+    });
+  } else if (activeSession) {
+    revokeSession(state, activeSession.id);
+  }
+
+  writeAuthStorage(state);
+  clearAuthStorage();
+  syncAuthCookie(null);
 }
 
 export function hasPermission(user: User | null, permission: string): boolean {

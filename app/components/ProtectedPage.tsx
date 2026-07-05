@@ -2,7 +2,7 @@
 
 import { useEffect, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { getCurrentUser, setCurrentUser } from "../lib/userManagement";
+import { getCurrentUser } from "../lib/userManagement";
 import AppShell from "./AppShell";
 
 interface ProtectedPageProps {
@@ -25,18 +25,10 @@ export default function ProtectedPage({ children, requireAdmin = false }: Protec
       return;
     }
 
-    if (currentUser.mustChangePassword) {
-      router.replace("/");
-      return;
-    }
-
-    if (requireAdmin && currentUser.role !== 'admin') {
+    if (requireAdmin && currentUser.role !== "admin") {
       router.replace("/main");
       return;
     }
-
-    // Update current user in localStorage to keep session active
-    setCurrentUser(currentUser);
   }, [router, requireAdmin]);
 
   return <AppShell>{children}</AppShell>;

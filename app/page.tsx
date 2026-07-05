@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { authenticateUser, changePassword, getAllUsers, getCurrentUser, initializeUsers } from "./lib/userManagement";
+import { authenticateUser, changePassword, getCurrentUser, initializeUsers } from "./lib/userManagement";
 import NotificationModal from "./components/NotificationModal";
 
 export default function LoginPage() {
@@ -57,20 +57,11 @@ export default function LoginPage() {
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError("");
-    console.log(getAllUsers());
     setSubmitting(true);
     try {
       const user = await authenticateUser(username, password);
-      if (user?.mustChangePassword) {
-        setResetUsername(user.username);
-        setCurrentPassword(password);
-        setShowResetPassword(true);
-        setError("You must change the default or temporary password before continuing.");
-        return;
-      }
-
       if (user) {
-        router.push("/main");
+        router.replace("/main");
       } else {
         setError("Invalid username or password");
       }
