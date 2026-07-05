@@ -44,6 +44,7 @@ export default function AppShell({ children }: AppShellProps) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const compactMode = collapsed && !isMobile;
 
   const visibleItems = useMemo(() => {
     return NAV_ITEMS.filter((item) => {
@@ -113,8 +114,15 @@ export default function AppShell({ children }: AppShellProps) {
 
   return (
     <div className="app-shell">
-      <aside className={`side-drawer ${collapsed && !isMobile ? "collapsed" : ""} ${drawerOpen ? "open" : ""}`}>
-        <div className="drawer-brand">
+      <aside className={`side-drawer ${compactMode ? "collapsed" : ""} ${drawerOpen ? "open" : ""}`}>
+        <div className={`drawer-brand ${compactMode ? "compact" : ""}`}>
+          <div className="brand-mark" aria-hidden="true">
+            <Icon name="warehouse" size={18} />
+          </div>
+          <div className="brand-copy">
+            <strong>Warehouse OS</strong>
+            <span>WMS Console</span>
+          </div>
           <button
             className="brand-toggle"
             type="button"
@@ -125,22 +133,18 @@ export default function AppShell({ children }: AppShellProps) {
                 setCollapsed((value) => !value);
               }
             }}
-            aria-label={collapsed && !isMobile ? "Expand navigation" : "Collapse navigation"}
-            title={collapsed && !isMobile ? "Expand navigation" : "Collapse navigation"}
+            aria-label={compactMode ? "Expand navigation" : "Collapse navigation"}
+            title={compactMode ? "Expand navigation" : "Collapse navigation"}
           >
-            <Icon name={collapsed && !isMobile ? "chevron_right" : "chevron_left"} size={18} />
+            <Icon name={compactMode ? "chevron_right" : "chevron_left"} size={18} />
           </button>
-          <div className="brand-copy">
-            <strong>Warehouse OS</strong>
-            <span>WMS Console</span>
-          </div>
         </div>
 
         <nav className="drawer-nav" aria-label="Warehouse navigation">
           {(Object.keys(groups) as Array<NavItem["group"]>).map((group) => (
             groups[group].length > 0 && (
               <div className="drawer-group" key={group}>
-                {!collapsed || isMobile ? <div className="drawer-group-title">{group}</div> : null}
+                {!compactMode ? <div className="drawer-group-title">{group}</div> : null}
                 {groups[group].map((item) => {
                   const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
                   return (
@@ -149,12 +153,13 @@ export default function AppShell({ children }: AppShellProps) {
                       key={item.href}
                       onClick={() => navigate(item.href)}
                       type="button"
-                      title={collapsed && !isMobile ? item.label : undefined}
+                      title={compactMode ? item.label : undefined}
+                      aria-label={compactMode ? item.label : undefined}
                     >
                       <span className="drawer-icon-wrap">
                         <Icon name={item.icon} size={20} />
                       </span>
-                      {!collapsed || isMobile ? <span className="drawer-link-label">{item.label}</span> : null}
+                      {!compactMode ? <span className="drawer-link-label">{item.label}</span> : null}
                     </button>
                   );
                 })}
@@ -163,7 +168,7 @@ export default function AppShell({ children }: AppShellProps) {
           ))}
         </nav>
 
-        <div className="drawer-user">
+        <div className={`drawer-user ${compactMode ? "compact" : ""}`}>
           <div className="drawer-user-copy">
             <strong>{currentUser?.username ?? "Operator"}</strong>
             <span>{currentUser?.role ?? "user"}</span>
