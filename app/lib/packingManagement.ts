@@ -16,6 +16,7 @@ export interface PackingItem {
   packType: PackType;
   quantity: number;
   uom: string;
+  barcode?: string;
 
   // 🔥 NEW
   packedQty?: number; // runtime tracking
@@ -87,6 +88,176 @@ export interface PackingRecord {
 }
 
 const ACTIVE_PACKING_SESSION_KEY = "current_packing_order";
+
+export interface BarcodeMatchResult {
+  matchedItem: PackingItem | null;
+  strategy: string | null;
+  candidates: string[];
+  matchedItems: PackingItem[];
+  ambiguous: boolean;
+  attemptedValues: string[];
+}
+
+function normalizeBarcodeValue(value: unknown): string {
+  if (value === null || value === undefined) return "";
+
+  const text = String(value)
+    .replace(/[\u0000-\u001f\u007f-\u009f]/g, "")
+    .trim();
+
+  if (!text) return "";
+
+  return text.replace(/[\s\t\r\n]+/g, "").replace(/[^A-Za-z0-9]/g, "");
+}
+
+function getBarcodeMatchCandidates(input: string): Array<{ value: string; strategy: string }> {
+  const variants: Array<{ value: string; strategy: string }> = [];
+  const addVariant = (value: string, strategy: string) => {
+    const normalizedValue = normalizeBarcodeValue(value);
+    if (!normalizedValue) return;
+
+    if (!variants.some((variant) => variant.value === normalizedValue)) {
+      variants.push({ value: normalizedValue, strategy });
+    }
+  };
+
+  const normalizedInput = normalizeBarcodeValue(input);
+  if (!normalizedInput) return variants;
+
+  addVariant(input, "exact");
+  addVariant(normalizedInput, "normalized");
+
+  const digitsOnly = normalizedInput.replace(/\D/g, "");
+  if (digitsOnly) {
+    addVariant(digitsOnly, "exact-numeric");
+
+    const withoutLeadingZeros = digitsOnly.replace(/^0+/, "");
+    if (withoutLeadingZeros) {
+      addVariant(withoutLeadingZeros, "leading-zero");
+    }
+
+    for (let i = 1; i <= 4; i += 1) {
+      addVariant(`${"0".repeat(i)}${digitsOnly}`, "leading-zero");
+      addVariant(`${"0".repeat(i)}${withoutLeadingZeros}`, "leading-zero");
+    }
+
+    if (digitsOnly.length === 12) {
+      addVariant(`0${digitsOnly}`, "upc-ean");
+      addVariant(digitsOnly.slice(1), "upc-ean");
+    } else if (digitsOnly.length === 13) {
+      if (digitsOnly.startsWith("0")) {
+        addVariant(digitsOnly.slice(1), "upc-ean");
+      } else {
+        addVariant(`0${digitsOnly}`, "upc-ean");
+      }
+    }
+
+    if (digitsOnly.length >= 8 && digitsOnly.length <= 14) {
+      addVariant(digitsOnly.padStart(14, "0"), "gtin");
+    }
+  }
+
+  addVariant(normalizedInput.toLowerCase(), "normalized");
+  addVariant(normalizedInput.toUpperCase(), "normalized");
+
+  return variants;
+}
+
+export function buildPackingItemBarcodeLookup(items: PackingItem[]): Map<string, PackingItem[]> {
+  const lookup = new Map<string, PackingItem[]>();
+
+  items.forEach((item) => {
+    const candidateSources = [item.barcode, item.sku].filter(Boolean) as string[];
+
+    candidateSources.forEach((source) => {
+      getBarcodeMatchCandidates(source).forEach(({ value }) => {
+        const existing = lookup.get(value) || [];
+        if (!existing.some((match) => match.sku === item.sku)) {
+          existing.push(item);
+        }
+        lookup.set(value, existing);
+      });
+    });
+  });
+
+  return lookup;
+}
+
+export function findPackingItemByBarcode(items: PackingItem[], input: string): BarcodeMatchResult {
+  const normalizedInput = normalizeBarcodeValue(input);
+  if (!normalizedInput) {
+    return {
+      matchedItem: null,
+      strategy: null,
+      candidates: [],
+      matchedItems: [],
+      ambiguous: false,
+      attemptedValues: [],
+    };
+  }
+
+  const exactSkuMatch = items.find((item) => normalizeBarcodeValue(item.sku) === normalizedInput);
+  if (exactSkuMatch) {
+    return {
+      matchedItem: exactSkuMatch,
+      strategy: "exact-sku",
+      candidates: [normalizedInput],
+      matchedItems: [exactSkuMatch],
+      ambiguous: false,
+      attemptedValues: [normalizedInput],
+    };
+  }
+
+  const lookup = buildPackingItemBarcodeLookup(items);
+  const candidateVariants = getBarcodeMatchCandidates(input);
+  const attemptedValues = candidateVariants.map((variant) => variant.value);
+  const matchedItems: PackingItem[] = [];
+  const seenSkus = new Set<string>();
+
+  for (const candidate of candidateVariants) {
+    const matches = lookup.get(candidate.value) || [];
+    if (!matches.length) continue;
+
+    matches.forEach((match) => {
+      if (!seenSkus.has(match.sku)) {
+        seenSkus.add(match.sku);
+        matchedItems.push(match);
+      }
+    });
+
+    if (matchedItems.length > 0) {
+      const uniqueMatch = matchedItems.filter((item) => item.sku === matchedItems[0].sku);
+      if (matchedItems.length === 1 || uniqueMatch.length === 1) {
+        return {
+          matchedItem: matchedItems[0],
+          strategy: candidate.strategy,
+          candidates: attemptedValues,
+          matchedItems: [matchedItems[0]],
+          ambiguous: false,
+          attemptedValues,
+        };
+      }
+
+      return {
+        matchedItem: null,
+        strategy: null,
+        candidates: attemptedValues,
+        matchedItems,
+        ambiguous: true,
+        attemptedValues,
+      };
+    }
+  }
+
+  return {
+    matchedItem: null,
+    strategy: null,
+    candidates: attemptedValues,
+    matchedItems: [],
+    ambiguous: false,
+    attemptedValues,
+  };
+}
 
 export function getActivePackingSession(): PackingOrder | null {
   if (typeof window === "undefined") return null;
@@ -231,7 +402,7 @@ function parseOmnifullFormat(rows: any[]): PackingItem[] {
 
     const sku = getSafeValue(["seller_sku_code", "seller_sku", "sku", "*seller_sku_code"]);
     const quantity = Number(getSafeValue(["quantity", "*quantity", "qty"]));
-    const barcode = getSafeValue(["barcode", "product_code"]);
+    const barcode = getSafeValue(["barcode", "product_code", "upc", "ean", "gtin", "barcode_no", "bar_code"]);
 
     if (!sku || !quantity || isNaN(quantity)) continue;
 
@@ -246,6 +417,7 @@ function parseOmnifullFormat(rows: any[]): PackingItem[] {
         packType: "pack_unit",
         quantity: Math.max(1, Math.floor(quantity)),
         uom: "PCS",
+        barcode: barcode ? barcode.toString().trim() : undefined,
         packedQty: 0,
       });
     }
@@ -277,6 +449,7 @@ function parseLogiwaFormat(rows: any[]): PackingItem[] {
     const name = getSafeValue(["product_name", "name", "description"]);
     const quantity = Number(getSafeValue(["quantity", "qty", "quantity_required"]));
     const packTypeRaw = getSafeValue(["pack_type", "packing_type", "packtype"]) || "unit";
+    const barcode = getSafeValue(["barcode", "barcode_no", "bar_code", "upc", "ean", "gtin"]);
 
     if (!sku || !name || !quantity || isNaN(quantity)) continue;
 
@@ -286,6 +459,7 @@ function parseLogiwaFormat(rows: any[]): PackingItem[] {
       packType: packTypeRaw.toLowerCase().includes("l1") ? "pack_l1" : "pack_unit",
       quantity: Math.max(1, Math.floor(quantity)),
       uom: "PCS",
+      barcode: barcode ? barcode.toString().trim() : undefined,
       packedQty: 0,
     });
   }
@@ -312,11 +486,12 @@ function parseGenericFormat(rows: any[]): PackingItem[] {
       return "";
     };
 
-    const sku = getSafeValue(["sku", "SKU", "product_id", "product id"]);
+    const sku = getSafeValue(["sku", "SKU", "product_id", "product id", "reference_code", "reference"]);
     const name = getSafeValue(["name", "product_name", "product name", "description"]);
     const packTypeRaw = getSafeValue(["packtype", "pack_type", "pack type", "packing type"]);
     const quantity = Number(getSafeValue(["quantity", "qty", "qnty", "quantity_required"]));
     const uom = getSafeValue(["uom", "unit", "unit_of_measure"]) || "PCS";
+    const barcode = getSafeValue(["barcode", "barcode_no", "bar_code", "upc", "ean", "gtin"]);
 
     if (!sku || !name || !quantity || isNaN(quantity)) {
       console.warn(`Skipping invalid row:`, row);
@@ -329,6 +504,7 @@ function parseGenericFormat(rows: any[]): PackingItem[] {
       packType: packTypeRaw.toLowerCase().includes("l1") ? "pack_l1" : "pack_unit",
       quantity: Math.max(1, Math.floor(quantity)),
       uom: uom.toString().trim() || "PCS",
+      barcode: barcode ? barcode.toString().trim() : undefined,
       packedQty: 0,
     });
   }

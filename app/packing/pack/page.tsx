@@ -22,6 +22,7 @@ import {
   saveActivePackingSession,
   clearActivePackingSession,
   syncPackingOrder,
+  findPackingItemByBarcode,
   type PackingOrder,
   type Box,
   type PackingItem,
@@ -492,15 +493,45 @@ export default function PackingPage() {
       return;
     }
 
-    const foundItem = packingOrder?.items.find(
-      (item) => item.sku.toLowerCase() === scanned
-    );
+    const matchResult = packingOrder
+      ? findPackingItemByBarcode(packingOrder.items, value)
+      : null;
+    const foundItem = matchResult?.matchedItem;
 
-    if (!foundItem) {
-      showToast("❌ Not Found", `SKU "${value}" not in this order`, "warning");
+    if (matchResult?.ambiguous) {
+      showToast(
+        "⚠️ Multiple Matches",
+        `Multiple items matched barcode "${value}": ${matchResult.matchedItems.map((item) => item.sku).join(", ")}`,
+        "warning"
+      );
       setScanInput("");
       return;
     }
+
+    if (!foundItem) {
+      const attemptedValues = matchResult?.attemptedValues?.length
+        ? matchResult.attemptedValues.join(", ")
+        : scanned;
+      console.info("Packing barcode match failed", {
+        originalBarcode: value,
+        normalizedBarcode: scanned,
+        attemptedValues,
+      });
+      showToast(
+        "❌ Not Found",
+        `Barcode "${value}" did not match any item. Tried: ${attemptedValues}`,
+        "warning"
+      );
+      setScanInput("");
+      return;
+    }
+
+    console.info("Packing barcode match succeeded", {
+      originalBarcode: value,
+      normalizedBarcode: scanned,
+      strategy: matchResult?.strategy,
+      matchedSku: foundItem.sku,
+    });
 
     const remaining = getRemainingQty(foundItem);
 
